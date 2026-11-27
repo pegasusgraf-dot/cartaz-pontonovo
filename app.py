@@ -1016,7 +1016,7 @@ def criar_cartaz_pdf(
     y_limite = int(altura * (0.026 if eh_horizontal else 0.118))
 
     bruto_nome = dados.get("descricao_produtos", "PRODUTO")
-    nome_prod = str(bruto_nome if pd.notna(bruto_nome) else "PRODUTO").strip() or "PRODUTO"
+    nome_prod = str(bruto_nome if pd.notna(bruto_nome) else "PRODUTO").strip().upper() or "PRODUTO"
     if tem_dobra:
         tam_nome = int(altura * (0.058 if eh_horizontal else 0.055))
         espaco_pos_imagem = int(altura * 0.022)
@@ -1056,7 +1056,7 @@ def criar_cartaz_pdf(
 
     if tem_extra:
         texto_inicio = "LEVE "
-        texto_meio = str(texto_extra).strip()
+        texto_meio = str(texto_extra).strip().upper()
         texto_fim = " POR:"
         c.setFont(f_preco_oferta, tamanho_fonte_extra)
 
@@ -1473,7 +1473,7 @@ def preview():
 def preview_avulso():
     try:
         form = request.form
-        nome_prod = form.get("descricao_produtos") or form.get("nome_produto") or "Produto em Oferta"
+        nome_prod = form.get("descricao_produtos") or form.get("nome_produto") or "PRODUTO EM OFERTA"
         preco_oferta = (form.get("preco_oferta") or form.get("preco_por") or "0").strip()
         cfg = obter_config_formato(form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
@@ -1758,59 +1758,4 @@ def gerar_avulso():
             "campo_extra": (form.get("campo_extra") or "").strip(),
             "observacao_extra": (form.get("observacao_extra") or "").strip(),
             "importa": (form.get("importa") or form.get("importado") or form.get("origem") or "").strip(),
-            "preco_normal": (form.get("preco_normal") or form.get("preco_de") or "").strip(),
-            "preco_oferta": preco_oferta,
-            "unidade_medida": (
-                form.get("unidade_medida")
-                or form.get("unidade")
-                or form.get("un")
-                or ""
-            ).strip(),
-            "limite_por_cliente": (form.get("limite_por_cliente") or "").strip(),
-            "validade": validade_val,
-            "data_inicio": data_inicio_val,
-            "data_termino": data_termino_val,
-            "observacao": obs_val,
-        }
-
-        caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=False)
-
-        if caminho_fundo and os.path.exists(caminho_fundo):
-            try:
-                with Image.open(caminho_fundo) as im_check:
-                    im_check.verify()
-                img_reader = ImageReader(caminho_fundo)
-            except Exception:
-                img_reader = None
-        else:
-            img_reader = None
-
-        nome_limpo = "".join(c for c in nome_prod if c.isalnum() or c in (" ", "_", "-")).strip()[:30] or "cartaz"
-        caminho_pdf = os.path.join(PASTA_TEMP, f"avulso_{nome_limpo}.pdf")
-
-        c = canvas.Canvas(caminho_pdf, pagesize=(largura_fmt, altura_fmt))
-        criar_cartaz_pdf(
-            c,
-            dados,
-            img_reader,
-            largura_fmt,
-            altura_fmt,
-            x_offset=0,
-            y_offset=0,
-            fator_escala=1.0,
-            formato=formato_limpo,
-            forma_valor=forma_val,
-            cor_forma_valor=cor_forma,
-            modo_caixa_unidade=modo_caixa_unidade,
-        )
-        c.showPage()
-        c.save()
-
-        return send_file(caminho_pdf, as_attachment=True, download_name=f"cartaz_{nome_limpo}.pdf")
-
-    except Exception as e:
-        return f"Erro interno no servidor: {str(e)}", 500
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True, port=2000, threaded=True, use_reloader=False)
+            "preco_normal": (form.get("preco_normal") or
