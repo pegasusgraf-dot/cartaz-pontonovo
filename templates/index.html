@@ -6,10 +6,24 @@
   <title>Gerador de Cartaz SyncSorte</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
+    :root {
+      --header-h: 58px;
+      --footer-h: 36px;
+    }
+
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    body { margin: 0; background: #0f172a; color: #f8fafc; padding-bottom: 48px; }
+
+    body {
+      margin: 0;
+      background: #0f172a;
+      color: #f8fafc;
+      height: 100vh;
+      overflow: hidden;
+    }
+
     header {
       position: sticky; top: 0; z-index: 100;
+      height: var(--header-h);
       display: flex; justify-content: space-between; align-items: center;
       padding: 14px 24px; background: #1e293b; border-bottom: 1px solid #334155;
     }
@@ -18,24 +32,50 @@
     header a { color: #facc15; text-decoration: none; font-weight: 600; }
 
     .container {
-      max-width: 1120px; margin: 24px auto; padding: 0 16px;
-      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
-      align-items: start;
+      max-width: 1180px;
+      height: calc(100vh - var(--header-h) - var(--footer-h));
+      margin: 0 auto;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: stretch;
+      overflow: hidden;
     }
-    @media (max-width: 860px) { .container { grid-template-columns: 1fr; } }
 
     .painel {
-      background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 20px;
     }
 
-    /* Fixa a coluna da prévia apenas na aba Cartaz Avulso no desktop */
-    body.modo-avulso .painel-preview {
-      position: sticky;
-      top: 72px;
-      align-self: start;
+    /* Rolagem exclusiva no painel do formulário */
+    .painel-form {
+      height: 100%;
+      overflow-y: auto;
+      padding-bottom: 28px;
+      scrollbar-width: thin;
+      scrollbar-color: #475569 #0f172a;
     }
-    @media (max-width: 860px) {
-      body.modo-avulso .painel-preview { position: static; }
+    .painel-form::-webkit-scrollbar {
+      width: 8px;
+    }
+    .painel-form::-webkit-scrollbar-track {
+      background: #0f172a;
+      border-radius: 8px;
+    }
+    .painel-form::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 8px;
+    }
+
+    /* Pré-visualização sempre visível no desktop (avulso e planilha) */
+    .painel-preview {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     h2 { margin: 0 0 14px; font-size: 1.1rem; }
@@ -133,21 +173,38 @@
     .btn-azul { background: #3b82f6; color: #fff; }
     .btn-verde { background: #22c55e; color: #052e16; }
     .btn-imprimir { background: #e2e8f0; color: #0f172a; }
+
     .preview-topo {
-      display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px; flex-shrink: 0;
     }
     .preview-topo h2 { margin: 0; }
     .status-preview { font-size: 0.8rem; color: #94a3b8; }
+
     .preview-box {
       position: relative;
-      min-height: 440px; display: grid; place-items: center;
-      background: #0f172a; border: 1px dashed #475569; border-radius: 10px; padding: 12px;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      background: #0f172a;
+      border: 1px dashed #475569;
+      border-radius: 10px;
+      padding: 12px;
       cursor: pointer;
+      overflow: hidden;
     }
     body.modo-planilha .preview-box {
       cursor: default;
     }
-    .preview-box img { max-width: 100%; max-height: 620px; border-radius: 6px; }
+    .preview-box img {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 6px;
+    }
     .dica-clique-preview {
       position: absolute;
       bottom: 10px;
@@ -173,6 +230,7 @@
       bottom: 0;
       left: 0;
       right: 0;
+      height: var(--footer-h);
       z-index: 90;
       display: flex;
       justify-content: flex-end;
@@ -182,6 +240,32 @@
       border-top: 1px solid #334155;
       font-size: 0.82rem;
       color: #cbd5e1;
+    }
+
+    @media (max-width: 860px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
+        padding-bottom: calc(var(--footer-h) + 16px);
+      }
+      .container {
+        height: auto;
+        grid-template-columns: 1fr;
+        overflow: visible;
+      }
+      .painel-form,
+      .painel-preview {
+        height: auto;
+        overflow: visible;
+        padding-bottom: 20px;
+      }
+      .preview-box {
+        min-height: 400px;
+      }
+      .preview-box img {
+        max-height: 620px;
+      }
     }
   </style>
 </head>
@@ -546,6 +630,7 @@
         document.body.classList.toggle("modo-avulso", abaAtual === "avulso");
         document.body.classList.toggle("modo-planilha", abaAtual === "planilha");
         document.getElementById("sec-" + abaAtual).classList.add("ativa");
+        document.querySelector(".painel-form").scrollTop = 0;
         if (abaAtual === "avulso") {
           agendarPreviewAvulso(180);
         } else {
