@@ -45,10 +45,10 @@
       border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 0.9rem;
     }
 
-    /* Grade visual com miniaturas reais dos fundos prontos */
+    /* Grade visual com miniaturas compactas ("de comprido, mas menor") */
     .grade-fundos {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
       gap: 8px;
       margin-top: 8px;
     }
@@ -63,18 +63,22 @@
       border: 2px solid #334155;
       background: #0f172a;
       color: #cbd5e1;
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       line-height: 1.15;
       cursor: pointer;
       transition: border-color 0.15s ease, transform 0.15s ease;
     }
     .thumb-fundo img {
       width: 100%;
+      height: auto;
       aspect-ratio: 3 / 4;
       object-fit: cover;
       border-radius: 5px;
       display: block;
       background: #1e293b;
+    }
+    .thumb-fundo.horizontal-thumb img {
+      aspect-ratio: 4 / 3;
     }
     .thumb-fundo span {
       width: 100%;
@@ -291,6 +295,11 @@
     const FUNDO_PADRAO = "oferta clube de vantagem.png";
     // Ajuste esta rota caso sua API de fundos sirva imagens em outro caminho (ex: /fundos_prontos/ ou /api/fundos/)
     const ROTA_IMAGEM_FUNDO = "/fundos_prontos/";
+    const ROTAS_ALTERNATIVAS_FUNDO = [
+      "/fundos_prontos/",
+      "/static/fundos_prontos/",
+      "/api/fundos/",
+    ];
 
     let abaAtual = "avulso";
     let timerPreviewAvulso = null;
@@ -367,10 +376,47 @@
       }
     }
 
-    function resolverUrlMiniatura(fundo) {
-      if (fundo && fundo.url) return fundo.url;
-      const nome = typeof fundo === "string" ? fundo : fundo.nome;
-      return `${ROTA_IMAGEM_FUNDO}${encodeURIComponent(nome)}`;
+    function montarCandidatosUrl(fundo) {
+      const nome = typeof fundo === "string" ? fundo : (fundo && fundo.nome) || "";
+      const encoded = encodeURIComponent(nome);
+      const urls = [];
+
+      if (fundo && typeof fundo === "object") {
+        if (fundo.url) urls.push(fundo.url);
+        if (fundo.path) urls.push(fundo.path);
+      }
+
+      if (nome) {
+        if (!urls.includes(`${ROTA_IMAGEM_FUNDO}${encoded}`)) {
+          urls.push(`${ROTA_IMAGEM_FUNDO}${encoded}`);
+        }
+        ROTAS_ALTERNATIVAS_FUNDO.forEach((base) => {
+          const candidato = `${base}${encoded}`;
+          if (!urls.includes(candidato)) urls.push(candidato);
+        });
+      }
+
+      return urls;
+    }
+
+    function aplicarImgComFallback(img, candidatos, ehHorizontal) {
+      let idx = 0;
+      if (!candidatos.length) return;
+
+      img.src = candidatos[0];
+      img.onerror = () => {
+        idx += 1;
+        if (idx < candidatos.length) {
+          img.src = candidatos[idx];
+        } else {
+          img.onerror = null;
+          img.style.display = "none";
+          const placeholder = document.createElement("div");
+          placeholder.textContent = "Sem imagem";
+          placeholder.style.cssText = `width:100%;aspect-ratio:${ehHorizontal ? "4/3" : "3/4"};display:grid;place-items:center;font-size:0.65rem;color:#fca5a5;background:#1e293b;border-radius:5px;text-align:center;padding:4px;`;
+          img.parentNode.insertBefore(placeholder, img);
+        }
+      };
     }
 
     function renderizarGradeFundos(fundos) {
@@ -378,20 +424,23 @@
       if (!grade) return;
       grade.innerHTML = "";
 
+      const formatoAtual = document.getElementById("formato")?.value || "vertical";
+      const ehHorizontal = formatoAtual.startsWith("horizontal");
+
       fundos.forEach((f) => {
         const nome = typeof f === "string" ? f : f.nome;
         if (!nome) return;
 
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "thumb-fundo";
+        btn.className = "thumb-fundo" + (ehHorizontal ? " horizontal-thumb" : "");
         btn.dataset.nome = nome;
         btn.title = nome;
 
         const img = document.createElement("img");
-        img.src = resolverUrlMiniatura(f);
         img.alt = nome;
         img.loading = "lazy";
+        aplicarImgComFallback(img, montarCandidatosUrl(f), ehHorizontal);
 
         const legenda = document.createElement("span");
         legenda.textContent = nome;
@@ -401,6 +450,8 @@
         btn.addEventListener("click", () => selecionarFundoPronto(nome, true));
         grade.appendChild(btn);
       });
+
+      marcarFundoAtivo(document.getElementById("fundo_preset")?.value || "");
     }
 
     function notificarMudancaEstilo() {
@@ -685,12 +736,12 @@
       }
     });
 
-    ["formato", "forma_valor"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.addEventListener("change", notificarMudancaEstilo);
-      }
+    document.getElementById("formato").addEventListener("change", () => {
+      renderizarGradeFundos(listaFundosDisponiveis);
+      notificarMudancaEstilo();
     });
+
+    document.getElementById("forma_valor").addEventListener("change", notificarMudancaEstilo);
 
     montarPlanilhaCores();
     carregarFundos().finally(() => {
