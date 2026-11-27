@@ -86,7 +86,7 @@ def require_login():
 def login():
     if session.get("cartaz_authenticated"):
         return redirect(url_for("index"))
-    error = None 
+    error = None
     if request.method == "POST":
         if not _configured():
             error = "O acesso ainda não foi configurado pelo administrador."
