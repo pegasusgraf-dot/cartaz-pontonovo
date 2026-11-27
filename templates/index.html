@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gerador de Cartazes</title>
+  <title>Gerador de Cartaz SyncSorte</title>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    body { margin: 0; background: #0f172a; color: #f8fafc; }
+    body { margin: 0; background: #0f172a; color: #f8fafc; padding-bottom: 48px; }
     header {
+      position: sticky; top: 0; z-index: 100;
       display: flex; justify-content: space-between; align-items: center;
       padding: 14px 24px; background: #1e293b; border-bottom: 1px solid #334155;
     }
@@ -30,7 +31,7 @@
     /* Fixa a coluna da prévia apenas na aba Cartaz Avulso no desktop */
     body.modo-avulso .painel-preview {
       position: sticky;
-      top: 20px;
+      top: 72px;
       align-self: start;
     }
     @media (max-width: 860px) {
@@ -156,11 +157,27 @@
     .aba.ativa { background: #eab308; color: #0f172a; border-color: #eab308; }
     .secao { display: none; }
     .secao.ativa { display: block; }
+
+    footer.rodape {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 90;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 8px 24px;
+      background: #1e293b;
+      border-top: 1px solid #334155;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+    }
   </style>
 </head>
 <body class="modo-avulso">
   <header>
-    <div class="titulo">Gerador de Cartazes</div>
+    <div class="titulo">Gerador de Cartaz SyncSorte</div>
     <div class="acoes">
       <span>{{ usuario }}</span>
       <a href="/logout">Sair</a>
@@ -293,6 +310,10 @@
       </div>
     </div>
   </div>
+
+  <footer class="rodape">
+    <span>Desenvovido: Paulo Rodrigo</span>
+  </footer>
 
   <script>
     const FUNDO_PADRAO = "oferta clube de vantagem.png";
