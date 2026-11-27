@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from functools import wraps
 import io
+import math
 import os
 import re
 import zipfile
@@ -40,7 +41,6 @@ PASTA_FONTES = os.path.join(BASE_DIR, "fontes")
 for pasta in (PASTA_UPLOAD, PASTA_SAIDA, PASTA_TEMP):
     os.makedirs(pasta, exist_ok=True)
 
-# Configuracao de sessao e autenticacao (suporta unico usuario ou varios via CARTAZ_USERS)
 CARTAZ_LOGIN = (os.environ.get("CARTAZ_LOGIN") or "").strip()
 CARTAZ_PASSWORD = (os.environ.get("CARTAZ_PASSWORD") or "").strip()
 CARTAZ_USERS_RAW = (os.environ.get("CARTAZ_USERS") or "").strip()
@@ -59,29 +59,24 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 EXTENSOES_IMAGEM = (".jpg", ".jpeg", ".png", ".webp")
 
-# Folha vertical padrao (proporcao A4 ~ 1 : 1.414)
 LARGURA_CARTAZ = 1240
 ALTURA_CARTAZ = 1754
 
-# Folha horizontal (A4 Paisagem ~ 1.414 : 1)
 LARGURA_PAISAGEM = 1754
 ALTURA_PAISAGEM = 1240
 
-# Margem de dobra no topo em pontos (A4 real = 595.28 x 841.89 pt, onde 4 cm = 113.39 pt)
 ALTURA_DOBRA_A4_PT = 4.0 * cm
 ALTURA_A4_RETRATO_PT = 29.7 * cm
 ALTURA_A4_PAISAGEM_PT = 21.0 * cm
 
 
 def obter_usuarios_permitidos():
-    """Retorna um dicionario {usuario: senha} combinando CARTAZ_LOGIN/PASSWORD e CARTAZ_USERS."""
     usuarios = {}
 
     if CARTAZ_LOGIN and CARTAZ_PASSWORD:
         usuarios[CARTAZ_LOGIN] = CARTAZ_PASSWORD
 
     if CARTAZ_USERS_RAW:
-        # Formato esperado: usuario1:senha1,usuario2:senha2
         for entrada in re.split(r"[,;\n]+", CARTAZ_USERS_RAW):
             item = entrada.strip()
             if not item or ":" not in item:
@@ -191,6 +186,74 @@ def parse_bool_form(valor, padrao=False):
         return True
     if texto in ("0", "false", "nao", "não", "no", "off", "inativo", "desativado"):
         return False
+    return padrao
+
+
+def normalizar_forma_valor(valor, legado_paralelogramo=False):
+    mapa_aliases = {
+        "nenhuma": "nenhuma",
+        "nenhum": "nenhuma",
+        "sem": "nenhuma",
+        "none": "nenhuma",
+        "paralelogramo": "paralelogramo",
+        "retangulo": "retangulo",
+        "retângulo": "retangulo",
+        "retangulo_arredondado": "retangulo_arredondado",
+        "retângulo_arredondado": "retangulo_arredondado",
+        "pilula": "pilula",
+        "pílula": "pilula",
+        "trapezio": "trapezio",
+        "trapézio": "trapezio",
+        "estrela_20_pontas": "estrela_20_pontas",
+        "estrela_20": "estrela_20_pontas",
+        "estrela20": "estrela_20_pontas",
+        "estrela": "estrela_20_pontas",
+        "elipse": "elipse",
+    }
+    texto = str(valor or "").strip().lower()
+    if texto in mapa_aliases:
+        return mapa_aliases[texto]
+    if legado_paralelogramo:
+        return "paralelogramo"
+    return "nenhuma"
+
+
+def parse_cor_rgb(valor, padrao=(255, 215, 0)):
+    if valor is None:
+        return padrao
+    if isinstance(valor, (tuple, list)) and len(valor) >= 3:
+        try:
+            return (
+                max(0, min(255, int(valor[0]))),
+                max(0, min(255, int(valor[1]))),
+                max(0, min(255, int(valor[2]))),
+            )
+        except Exception:
+            return padrao
+
+    texto = str(valor).strip()
+    if not texto:
+        return padrao
+
+    if texto.startswith("#"):
+        hex_limpo = texto[1:].strip()
+        if len(hex_limpo) == 3:
+            hex_limpo = "".join(ch * 2 for ch in hex_limpo)
+        if re.fullmatch(r"[0-9a-fA-F]{6}", hex_limpo):
+            return (
+                int(hex_limpo[0:2], 16),
+                int(hex_limpo[2:4], 16),
+                int(hex_limpo[4:6], 16),
+            )
+
+    m_rgb = re.match(r"^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})", texto, re.IGNORECASE)
+    if m_rgb:
+        return (
+            max(0, min(255, int(m_rgb.group(1)))),
+            max(0, min(255, int(m_rgb.group(2)))),
+            max(0, min(255, int(m_rgb.group(3)))),
+        )
+
     return padrao
 
 
@@ -558,31 +621,15 @@ def desenhar_bloco_alinhado_direita(
     return y_base + ((len(linhas) - 1) * passo_y) + tamanho
 
 
-def desenhar_fundo_paralelogramo_arredondado(
-    c,
-    x_esq,
-    y_baixo,
-    largura,
-    altura,
-    inclinacao_x,
-    raio,
-    cor_preenchimento=(255, 215, 0),
-):
-    r = max(4.0, min(float(raio), float(largura) * 0.35, float(altura) * 0.42))
-    skew = float(inclinacao_x)
-
-    p0 = (float(x_esq), float(y_baixo))
-    p1 = (float(x_esq) + float(largura), float(y_baixo))
-    p2 = (float(x_esq) + float(largura) + skew, float(y_baixo) + float(altura))
-    p3 = (float(x_esq) + skew, float(y_baixo) + float(altura))
-
-    vertices = [p0, p1, p2, p3]
+def _tracar_poligono_arredondado(c, vertices, raio):
+    n = len(vertices)
+    if n < 3:
+        return
     path = c.beginPath()
-
-    for i in range(4):
-        prev_pt = vertices[(i - 1) % 4]
+    for i in range(n):
+        prev_pt = vertices[(i - 1) % n]
         curr_pt = vertices[i]
-        next_pt = vertices[(i + 1) % 4]
+        next_pt = vertices[(i + 1) % n]
 
         vx_in, vy_in = prev_pt[0] - curr_pt[0], prev_pt[1] - curr_pt[1]
         len_in = max(1e-6, (vx_in * vx_in + vy_in * vy_in) ** 0.5)
@@ -592,8 +639,9 @@ def desenhar_fundo_paralelogramo_arredondado(
         len_out = max(1e-6, (vx_out * vx_out + vy_out * vy_out) ** 0.5)
         u_out = (vx_out / len_out, vy_out / len_out)
 
-        start_arc = (curr_pt[0] + u_in[0] * r, curr_pt[1] + u_in[1] * r)
-        end_arc = (curr_pt[0] + u_out[0] * r, curr_pt[1] + u_out[1] * r)
+        r_local = min(float(raio), len_in * 0.42, len_out * 0.42)
+        start_arc = (curr_pt[0] + u_in[0] * r_local, curr_pt[1] + u_in[1] * r_local)
+        end_arc = (curr_pt[0] + u_out[0] * r_local, curr_pt[1] + u_out[1] * r_local)
 
         if i == 0:
             path.moveTo(start_arc[0], start_arc[1])
@@ -610,13 +658,103 @@ def desenhar_fundo_paralelogramo_arredondado(
         )
 
     path.close()
+    c.drawPath(path, stroke=0, fill=1)
+
+
+def desenhar_estrela_20_pontas(c, x0, yb, w, h):
+    cx = x0 + (w * 0.5)
+    ym = yb + (h * 0.5)
+    rx_ext = w * 0.52
+    ry_ext = h * 0.56
+    rx_int = w * 0.44
+    ry_int = h * 0.44
+
+    pontas = 20
+    total_vertices = pontas * 2
+    path = c.beginPath()
+
+    for idx in range(total_vertices):
+        angulo = (2.0 * math.pi * idx) / total_vertices
+        eh_ponta = (idx % 2) == 0
+        rx = rx_ext if eh_ponta else rx_int
+        ry = ry_ext if eh_ponta else ry_int
+        px = cx + (rx * math.cos(angulo))
+        py = ym + (ry * math.sin(angulo))
+        if idx == 0:
+            path.moveTo(px, py)
+        else:
+            path.lineTo(px, py)
+
+    path.close()
+    c.drawPath(path, stroke=0, fill=1)
+
+
+def desenhar_forma_atras_valor(
+    c,
+    x_esq_forma,
+    y_baixo_forma,
+    largura_forma,
+    altura_forma,
+    forma="paralelogramo",
+    cor_preenchimento=(255, 215, 0),
+):
+    tipo = normalizar_forma_valor(forma)
+    if tipo == "nenhuma":
+        return
+
+    w = max(24.0, float(largura_forma))
+    h = max(16.0, float(altura_forma))
+    x0 = float(x_esq_forma)
+    x1 = x0 + w
+    yb = float(y_baixo_forma)
+    yt = yb + h
+
     c.saveState()
     c.setFillColorRGB(
         cor_preenchimento[0] / 255.0,
         cor_preenchimento[1] / 255.0,
         cor_preenchimento[2] / 255.0,
     )
-    c.drawPath(path, stroke=0, fill=1)
+
+    if tipo == "retangulo":
+        c.rect(x0, yb, w, h, stroke=0, fill=1)
+
+    elif tipo == "retangulo_arredondado":
+        raio = max(6.0, min(h * 0.16, w * 0.08))
+        c.roundRect(x0, yb, w, h, raio, stroke=0, fill=1)
+
+    elif tipo == "pilula":
+        raio = h * 0.45
+        c.roundRect(x0, yb, w, h, raio, stroke=0, fill=1)
+
+    elif tipo == "paralelogramo":
+        skew = min(w * 0.08, h * 0.35)
+        vertices = [
+            (x0 - (skew * 0.5), yb),
+            (x1 - (skew * 0.5), yb),
+            (x1 + (skew * 0.5), yt),
+            (x0 + (skew * 0.5), yt),
+        ]
+        raio = max(6.0, min(h * 0.14, w * 0.06))
+        _tracar_poligono_arredondado(c, vertices, raio)
+
+    elif tipo == "trapezio":
+        recuo = min(w * 0.08, h * 0.25)
+        vertices = [
+            (x0, yb),
+            (x1, yb),
+            (x1 - recuo, yt),
+            (x0 + recuo, yt),
+        ]
+        raio = max(6.0, min(h * 0.14, w * 0.06))
+        _tracar_poligono_arredondado(c, vertices, raio)
+
+    elif tipo == "estrela_20_pontas":
+        desenhar_estrela_20_pontas(c, x0, yb, w, h)
+
+    elif tipo == "elipse":
+        c.ellipse(x0, yb, x1, yt, stroke=0, fill=1)
+
     c.restoreState()
 
 
@@ -628,7 +766,8 @@ def calcular_geometria_preco_oferta(
     preco_str,
     fonte,
     tamanho_inteiro,
-    fundo_paralelogramo=False,
+    forma_valor="nenhuma",
+    cor_forma_valor=(255, 215, 0),
     unidade_medida="",
     fonte_unidade="Helvetica",
 ):
@@ -664,18 +803,11 @@ def calcular_geometria_preco_oferta(
     y_topo_total = max(topo_simbolo, topo_centavos, topo_inteiro)
     y_base_total = y - (tamanho_inteiro * 0.06)
 
-    pad_x = max(14.0, tamanho_inteiro * 0.18)
-    pad_y = max(9.0, tamanho_inteiro * 0.11)
-    inclinacao = max(18.0, tamanho_inteiro * 0.20)
-    raio = max(16.0, min(46.0, tamanho_inteiro * 0.24))
-
     unidade_limpa = str(unidade_medida or "").strip().upper()
     tem_unidade = bool(unidade_limpa)
     tamanho_unidade = max(14, int(tamanho_inteiro * 0.19))
     espaco_unidade = max(6.0, tamanho_inteiro * 0.05)
 
-    # Mantem unidade_medida sempre na mesma posicao em relacao aos centavos,
-    # independentemente de o fundo paralelogramo amarelo estar ativo ou nao.
     x_centro_centavos = (
         x_inicial
         + largura_simbolo
@@ -687,16 +819,14 @@ def calcular_geometria_preco_oferta(
     x_unidade = x_centro_centavos if largura_centavos >= tamanho_unidade else x_centro_preco
     y_unidade = y_centavos - espaco_unidade - (tamanho_unidade * 0.85) if tem_unidade else y_base_total
 
-    if fundo_paralelogramo:
-        y_baixo_fundo = y_base_total - pad_y
-        altura_fundo = (y_topo_total - y_base_total) + (pad_y * 2.0)
-        y_topo_fundo = y_baixo_fundo + altura_fundo
-        y_base_bloco = min(y_baixo_fundo, y_unidade - (tamanho_unidade * 0.15)) if tem_unidade else y_baixo_fundo
-    else:
-        y_baixo_fundo = y_base_total
-        altura_fundo = y_topo_total - y_base_total
-        y_topo_fundo = y_topo_total
-        y_base_bloco = min(y_base_total, y_unidade - (tamanho_unidade * 0.15)) if tem_unidade else y_base_total
+    tipo_forma = normalizar_forma_valor(forma_valor)
+    tem_forma_valor = tipo_forma != "nenhuma"
+    pad_x = max(14.0, tamanho_inteiro * 0.10)
+    pad_y = max(8.0, tamanho_inteiro * 0.06)
+    x_esq_forma = x_inicial - pad_x
+    y_baixo_forma = y_base_total - pad_y
+    largura_forma = largura_total_preco + (pad_x * 2.0)
+    altura_forma = (y_topo_total - y_base_total) + (pad_y * 2.0)
 
     return {
         "simbolo": simbolo,
@@ -711,20 +841,21 @@ def calcular_geometria_preco_oferta(
         "x_inicial": x_inicial,
         "y_simbolo": y_simbolo,
         "y_centavos": y_centavos,
+        "y_topo_total": y_topo_total,
+        "y_base_total": y_base_total,
         "unidade_medida": unidade_limpa,
         "tem_unidade": tem_unidade,
         "tamanho_unidade": tamanho_unidade,
         "fonte_unidade": fonte_unidade,
         "x_unidade": x_unidade,
         "y_unidade": y_unidade,
-        "y_base_bloco": y_base_bloco,
-        "x_esq_fundo": x_inicial - pad_x - (inclinacao * 0.35),
-        "y_baixo_fundo": y_baixo_fundo,
-        "largura_fundo": largura_total_preco + (pad_x * 2.0),
-        "altura_fundo": altura_fundo,
-        "y_topo_fundo": y_topo_fundo,
-        "inclinacao": inclinacao,
-        "raio": raio,
+        "forma_valor": tipo_forma,
+        "tem_forma_valor": tem_forma_valor,
+        "cor_forma_valor": parse_cor_rgb(cor_forma_valor),
+        "x_esq_forma": x_esq_forma,
+        "y_baixo_forma": y_baixo_forma,
+        "largura_forma": largura_forma,
+        "altura_forma": altura_forma,
     }
 
 
@@ -737,7 +868,8 @@ def desenhar_preco_oferta_fracionado(
     fonte,
     tamanho_inteiro,
     cor=(255, 0, 0),
-    fundo_paralelogramo=False,
+    forma_valor="nenhuma",
+    cor_forma_valor=(255, 215, 0),
     geom=None,
     unidade_medida="",
     fonte_unidade="Helvetica",
@@ -752,21 +884,21 @@ def desenhar_preco_oferta_fracionado(
             preco_str,
             fonte,
             tamanho_inteiro,
-            fundo_paralelogramo=fundo_paralelogramo,
+            forma_valor=forma_valor,
+            cor_forma_valor=cor_forma_valor,
             unidade_medida=unidade_medida,
             fonte_unidade=fonte_unidade,
         )
 
-    if fundo_paralelogramo:
-        desenhar_fundo_paralelogramo_arredondado(
+    if geom["tem_forma_valor"]:
+        desenhar_forma_atras_valor(
             c,
-            x_esq=geom["x_esq_fundo"],
-            y_baixo=geom["y_baixo_fundo"],
-            largura=geom["largura_fundo"],
-            altura=geom["altura_fundo"],
-            inclinacao_x=geom["inclinacao"],
-            raio=geom["raio"],
-            cor_preenchimento=(255, 215, 0),
+            x_esq_forma=geom["x_esq_forma"],
+            y_baixo_forma=geom["y_baixo_forma"],
+            largura_forma=geom["largura_forma"],
+            altura_forma=geom["altura_forma"],
+            forma=geom["forma_valor"],
+            cor_preenchimento=geom["cor_forma_valor"],
         )
 
     c.setFillColorRGB(cor[0] / 255, cor[1] / 255, cor[2] / 255)
@@ -798,6 +930,8 @@ def criar_cartaz_pdf(
     fator_escala=1.0,
     formato="vertical",
     fundo_paralelogramo=False,
+    forma_valor=None,
+    cor_forma_valor=(255, 215, 0),
 ):
     cfg = obter_config_formato(formato)
     largura = largura_orig * fator_escala
@@ -805,6 +939,15 @@ def criar_cartaz_pdf(
     eh_horizontal = cfg["eh_horizontal"]
     margem_topo_dobra = cfg["margem_topo_dobra"] * fator_escala
     tem_dobra = margem_topo_dobra > 0
+
+    forma_escolhida = normalizar_forma_valor(
+        forma_valor if forma_valor is not None else dados.get("forma_valor", ""),
+        legado_paralelogramo=fundo_paralelogramo,
+    )
+    cor_forma_rgb = parse_cor_rgb(
+        cor_forma_valor if cor_forma_valor is not None else dados.get("cor_forma_valor", "#FFD700"),
+        padrao=(255, 215, 0),
+    )
 
     c.saveState()
     c.translate(x_offset, y_offset)
@@ -953,7 +1096,6 @@ def criar_cartaz_pdf(
     tem_preco_por = tem_valor_preco_valido(p_oferta_bruto)
     mostrar_por_apenas = tem_preco_de and tem_preco_por
 
-    # Escala proporcional para preencher a largura util da pagina com centralizacao
     tam_base_amostra = 100.0
     geom_amostra = calcular_geometria_preco_oferta(
         c,
@@ -963,14 +1105,12 @@ def criar_cartaz_pdf(
         p_oferta,
         f_preco_oferta,
         tam_base_amostra,
-        fundo_paralelogramo=fundo_paralelogramo,
+        forma_valor=forma_escolhida,
+        cor_forma_valor=cor_forma_rgb,
         unidade_medida=unidade_medida,
         fonte_unidade=f_detalhes,
     )
-    largura_referencia_amostra = max(
-        1.0,
-        geom_amostra["largura_fundo"] if fundo_paralelogramo else geom_amostra["largura_total_preco"],
-    )
+    largura_referencia_amostra = max(1.0, geom_amostra["largura_total_preco"])
     largura_desejada_preco = largura_bloco_preco * (0.78 if eh_horizontal else 0.84)
     tam_por_largura = int(tam_base_amostra * (largura_desejada_preco / largura_referencia_amostra))
 
@@ -979,13 +1119,13 @@ def criar_cartaz_pdf(
     tamanho_fonte_preco = max(piso_preco, min(teto_preco, tam_por_largura))
 
     if eh_horizontal:
-        y_pos_preco = int(altura * 0.155) if tem_limite else int(altura * 0.115)
+        y_pos_preco = int(altura * 0.175) if tem_limite else int(altura * 0.130)
     else:
-        y_pos_preco = (y_limite + int(altura * 0.105)) if tem_limite else int(altura * 0.200)
+        y_pos_preco = (y_limite + int(altura * 0.125)) if tem_limite else int(altura * 0.220)
 
     tamanho_fonte_por_apenas = int(altura * (0.026 if eh_horizontal else 0.023))
     tamanho_fonte_normal = int(altura * (0.044 if eh_horizontal else 0.042))
-    folga_amarelo_por_apenas = int(altura * (0.022 if fundo_paralelogramo else 0.010))
+    folga_topo_por_apenas = int(altura * 0.012)
     distancia_de_acima = int(altura * 0.038)
 
     def calcular_cotas_preco(tam_preco_cand):
@@ -997,13 +1137,18 @@ def criar_cartaz_pdf(
             p_oferta,
             f_preco_oferta,
             tam_preco_cand,
-            fundo_paralelogramo=fundo_paralelogramo,
+            forma_valor=forma_escolhida,
+            cor_forma_valor=cor_forma_rgb,
             unidade_medida=unidade_medida,
             fonte_unidade=f_detalhes,
         )
-        base_referencia_topo = geom_cand["y_topo_fundo"] if fundo_paralelogramo else (y_pos_preco + int(tam_preco_cand * 0.88))
-        y_por_cand = base_referencia_topo + folga_amarelo_por_apenas if mostrar_por_apenas else base_referencia_topo
-        y_de_cand = (y_por_cand + distancia_de_acima) if mostrar_por_apenas else (base_referencia_topo + folga_amarelo_por_apenas)
+        base_referencia_topo = (
+            (geom_cand["y_baixo_forma"] + geom_cand["altura_forma"])
+            if geom_cand["tem_forma_valor"]
+            else geom_cand["y_topo_total"]
+        )
+        y_por_cand = base_referencia_topo + folga_topo_por_apenas if mostrar_por_apenas else base_referencia_topo
+        y_de_cand = (y_por_cand + distancia_de_acima) if mostrar_por_apenas else (base_referencia_topo + folga_topo_por_apenas)
 
         if tem_preco_de:
             topo_bloco_cand = y_de_cand + tamanho_fonte_normal + int(altura * 0.012)
@@ -1060,7 +1205,8 @@ def criar_cartaz_pdf(
         f_preco_oferta,
         tamanho_fonte_preco,
         (255, 0, 0),
-        fundo_paralelogramo=fundo_paralelogramo,
+        forma_valor=forma_escolhida,
+        cor_forma_valor=cor_forma_rgb,
         geom=geom_preco,
         unidade_medida=unidade_medida,
         fonte_unidade=f_detalhes,
@@ -1140,6 +1286,27 @@ def criar_cartaz_pdf(
     c.restoreState()
 
 
+def _extrair_estilo_forma_request(req):
+    legado = parse_bool_form(req.form.get("fundo_paralelogramo"), padrao=False)
+    forma_raw = (
+        req.form.get("forma_valor")
+        or req.form.get("forma_abaixo_valor")
+        or req.form.get("forma_geometrica")
+        or req.form.get("forma")
+        or ""
+    ).strip()
+    forma_limpa = normalizar_forma_valor(forma_raw, legado_paralelogramo=legado)
+    cor_raw = (
+        req.form.get("cor_forma_valor")
+        or req.form.get("cor_forma_abaixo")
+        or req.form.get("cor_forma")
+        or req.form.get("cor_paralelogramo")
+        or "#FFD700"
+    ).strip()
+    cor_rgb = parse_cor_rgb(cor_raw, padrao=(255, 215, 0))
+    return forma_limpa, cor_rgb
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if autenticado():
@@ -1202,7 +1369,7 @@ def preview():
         codigo_buscado = request.form.get("codigo_produto", "").strip()
         cfg = obter_config_formato(request.form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
-        fundo_paralelogramo = parse_bool_form(request.form.get("fundo_paralelogramo"), padrao=False)
+        forma_val, cor_forma = _extrair_estilo_forma_request(request)
 
         if not codigo_buscado or file_planilha.filename == "" or not caminho_fundo:
             return "Dados incompletos (selecione planilha, fundo e código)", 400
@@ -1231,7 +1398,8 @@ def preview():
             return "Produto não encontrado", 404
 
         try:
-            Image.open(caminho_fundo).verify()
+            with Image.open(caminho_fundo) as im_check:
+                im_check.verify()
         except Exception:
             return "Imagem inválida", 400
 
@@ -1248,7 +1416,8 @@ def preview():
             y_offset=0,
             fator_escala=1.0,
             formato=formato_limpo,
-            fundo_paralelogramo=fundo_paralelogramo,
+            forma_valor=forma_val,
+            cor_forma_valor=cor_forma,
         )
         c.showPage()
         c.save()
@@ -1256,7 +1425,8 @@ def preview():
 
         doc = fitz.open(stream=pdf_buffer.read(), filetype="pdf")
         page = doc.load_page(0)
-        pix = page.get_pixmap(dpi=120)
+        pix = page.get_pixmap(dpi=110)
+        doc.close()
         img_byte_arr = io.BytesIO(pix.tobytes("png"))
         img_byte_arr.seek(0)
         return send_file(img_byte_arr, mimetype="image/png")
@@ -1274,7 +1444,7 @@ def preview_avulso():
         preco_oferta = (form.get("preco_oferta") or form.get("preco_por") or "0").strip()
         cfg = obter_config_formato(form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
-        fundo_paralelogramo = parse_bool_form(form.get("fundo_paralelogramo"), padrao=False)
+        forma_val, cor_forma = _extrair_estilo_forma_request(request)
 
         validade_val = (form.get("validade") or "").strip()
         data_inicio_val = (form.get("data_inicio") or "").strip()
@@ -1307,11 +1477,12 @@ def preview_avulso():
             "observacao": obs_val,
         }
 
-        caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=True)
+        caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=False)
 
         if caminho_fundo and os.path.exists(caminho_fundo):
             try:
-                Image.open(caminho_fundo).verify()
+                with Image.open(caminho_fundo) as im_check:
+                    im_check.verify()
                 img_reader = ImageReader(caminho_fundo)
             except Exception:
                 img_reader = None
@@ -1330,7 +1501,8 @@ def preview_avulso():
             y_offset=0,
             fator_escala=1.0,
             formato=formato_limpo,
-            fundo_paralelogramo=fundo_paralelogramo,
+            forma_valor=forma_val,
+            cor_forma_valor=cor_forma,
         )
         c.showPage()
         c.save()
@@ -1338,7 +1510,8 @@ def preview_avulso():
 
         doc = fitz.open(stream=pdf_buffer.read(), filetype="pdf")
         page = doc.load_page(0)
-        pix = page.get_pixmap(dpi=130)
+        pix = page.get_pixmap(dpi=115)
+        doc.close()
         img_byte_arr = io.BytesIO(pix.tobytes("png"))
         img_byte_arr.seek(0)
         return send_file(img_byte_arr, mimetype="image/png")
@@ -1358,7 +1531,7 @@ def gerar():
         caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=False)
         cfg = obter_config_formato(request.form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
-        fundo_paralelogramo = parse_bool_form(request.form.get("fundo_paralelogramo"), padrao=False)
+        forma_val, cor_forma = _extrair_estilo_forma_request(request)
 
         if file_planilha.filename == "" or not caminho_fundo:
             return "Selecione a planilha (.xlsx) e uma imagem de fundo (da pasta ou por upload).", 400
@@ -1378,7 +1551,8 @@ def gerar():
                 pass
 
         try:
-            Image.open(caminho_fundo).verify()
+            with Image.open(caminho_fundo) as im_check:
+                im_check.verify()
         except Exception:
             return "A imagem de fundo enviada ou selecionada é inválida ou está corrompida.", 400
 
@@ -1405,7 +1579,8 @@ def gerar():
                 y_offset=0,
                 fator_escala=1.0,
                 formato=formato_limpo,
-                fundo_paralelogramo=fundo_paralelogramo,
+                forma_valor=forma_val,
+                cor_forma_valor=cor_forma,
             )
             c.showPage()
             c.save()
@@ -1450,7 +1625,7 @@ def gerar_unico():
         codigo_buscado = request.form.get("codigo_produto", "").strip()
         cfg = obter_config_formato(request.form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
-        fundo_paralelogramo = parse_bool_form(request.form.get("fundo_paralelogramo"), padrao=False)
+        forma_val, cor_forma = _extrair_estilo_forma_request(request)
 
         if not codigo_buscado:
             return "Digite o código do produto que deseja buscar.", 400
@@ -1481,7 +1656,8 @@ def gerar_unico():
             return f"Produto com o código '{codigo_buscado}' não foi encontrado na planilha.", 404
 
         try:
-            Image.open(caminho_fundo).verify()
+            with Image.open(caminho_fundo) as im_check:
+                im_check.verify()
         except Exception:
             return "A imagem de fundo enviada ou selecionada é inválida.", 400
 
@@ -1500,7 +1676,8 @@ def gerar_unico():
             y_offset=0,
             fator_escala=1.0,
             formato=formato_limpo,
-            fundo_paralelogramo=fundo_paralelogramo,
+            forma_valor=forma_val,
+            cor_forma_valor=cor_forma,
         )
         c.showPage()
         c.save()
@@ -1520,7 +1697,7 @@ def gerar_avulso():
         preco_oferta = (form.get("preco_oferta") or form.get("preco_por") or "").strip()
         cfg = obter_config_formato(form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
-        fundo_paralelogramo = parse_bool_form(form.get("fundo_paralelogramo"), padrao=False)
+        forma_val, cor_forma = _extrair_estilo_forma_request(request)
 
         if not nome_prod or not preco_oferta:
             return "Preencha o Nome do Produto e o Preço 'Por'.", 400
@@ -1556,11 +1733,12 @@ def gerar_avulso():
             "observacao": obs_val,
         }
 
-        caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=True)
+        caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=False)
 
         if caminho_fundo and os.path.exists(caminho_fundo):
             try:
-                Image.open(caminho_fundo).verify()
+                with Image.open(caminho_fundo) as im_check:
+                    im_check.verify()
                 img_reader = ImageReader(caminho_fundo)
             except Exception:
                 img_reader = None
@@ -1581,7 +1759,8 @@ def gerar_avulso():
             y_offset=0,
             fator_escala=1.0,
             formato=formato_limpo,
-            fundo_paralelogramo=fundo_paralelogramo,
+            forma_valor=forma_val,
+            cor_forma_valor=cor_forma,
         )
         c.showPage()
         c.save()
