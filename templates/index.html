@@ -29,7 +29,27 @@
       width: 100%; padding: 9px 10px; border-radius: 8px;
       border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 0.9rem;
     }
-    .linha-check { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 0.9rem; }
+    .caixa-forma {
+      background: #0f172a; border: 1px solid #334155; border-radius: 10px;
+      padding: 12px; margin: 12px 0;
+    }
+    .linha-cor {
+      display: flex; gap: 10px; align-items: center; margin-top: 6px;
+    }
+    input[type="color"] {
+      width: 52px; height: 38px; padding: 2px; border-radius: 8px;
+      border: 1px solid #475569; background: #1e293b; cursor: pointer; flex-shrink: 0;
+    }
+    .planilha-cores {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+    }
+    .swatch {
+      width: 26px; height: 26px; border-radius: 6px; padding: 0;
+      border: 2px solid rgba(255,255,255,0.22); cursor: pointer;
+    }
+    .swatch.ativa {
+      border-color: #ffffff; transform: scale(1.08);
+    }
     .botoes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
     button {
       padding: 10px 14px; border-radius: 8px; border: 0; font-weight: 700;
@@ -94,9 +114,27 @@
         <input id="fundo_file" type="file" accept=".jpg,.jpeg,.png,.webp" />
       </div>
 
-      <div class="linha-check">
-        <input id="fundo_paralelogramo" type="checkbox" />
-        <label for="fundo_paralelogramo" style="margin:0;">Fundo paralelogramo amarelo no preço</label>
+      <div class="caixa-forma">
+        <div class="campo" style="margin-bottom:8px;">
+          <label for="forma_valor">Forma Geométrica no Escrito do Valor</label>
+          <select id="forma_valor">
+            <option value="nenhuma">Nenhuma</option>
+            <option value="paralelogramo">Paralelogramo</option>
+            <option value="retangulo">Retângulo</option>
+            <option value="retangulo_arredondado">Retângulo Arredondado</option>
+            <option value="pilula">Pílula / Cápsula</option>
+            <option value="trapezio">Trapézio</option>
+            <option value="estrela_20_pontas">Estrela (20 pontas)</option>
+            <option value="elipse">Elipse</option>
+          </select>
+        </div>
+
+        <label for="cor_forma_picker">Planilha de Cores do Destaque do Valor</label>
+        <div class="linha-cor">
+          <input id="cor_forma_picker" type="color" value="#FFD700" title="Escolher cor personalizada" />
+          <input id="cor_forma_hex" type="text" value="#FFD700" maxlength="9" placeholder="#FFD700" />
+        </div>
+        <div id="planilha-cores" class="planilha-cores" aria-label="Paleta de cores"></div>
       </div>
 
       <!-- ABA AVULSO -->
@@ -179,6 +217,65 @@
     let timerPreviewAvulso = null;
     let controllerPreviewAvulso = null;
     let ultimaUrlPreview = null;
+    let emExecucaoPreview = false;
+    let pendenciaPreview = false;
+
+    const CORES_PLANILHA = [
+      { nome: "Amarelo Ouro", hex: "#FFD700" },
+      { nome: "Amarelo Oferta", hex: "#FACC15" },
+      { nome: "Laranja", hex: "#F97316" },
+      { nome: "Vermelho", hex: "#EF4444" },
+      { nome: "Rosa", hex: "#EC4899" },
+      { nome: "Roxo", hex: "#8B5CF6" },
+      { nome: "Azul", hex: "#3B82F6" },
+      { nome: "Ciano", hex: "#06B6D4" },
+      { nome: "Verde", hex: "#22C55E" },
+      { nome: "Preto", hex: "#111827" },
+      { nome: "Cinza", hex: "#64748B" },
+      { nome: "Branco", hex: "#FFFFFF" },
+    ];
+
+    function montarPlanilhaCores() {
+      const container = document.getElementById("planilha-cores");
+      const picker = document.getElementById("cor_forma_picker");
+      const hexInput = document.getElementById("cor_forma_hex");
+      if (!container) return;
+
+      container.innerHTML = "";
+      CORES_PLANILHA.forEach((c) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "swatch";
+        btn.style.background = c.hex;
+        btn.title = `${c.nome} (${c.hex})`;
+        btn.dataset.hex = c.hex.toUpperCase();
+        if (hexInput.value.trim().toUpperCase() === c.hex.toUpperCase()) {
+          btn.classList.add("ativa");
+        }
+        btn.addEventListener("click", () => {
+          picker.value = c.hex;
+          hexInput.value = c.hex.toUpperCase();
+          marcarSwatchAtiva(c.hex);
+          notificarMudancaEstilo();
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function marcarSwatchAtiva(hex) {
+      const alvo = String(hex || "").trim().toUpperCase();
+      document.querySelectorAll("#planilha-cores .swatch").forEach((el) => {
+        el.classList.toggle("ativa", el.dataset.hex === alvo);
+      });
+    }
+
+    function notificarMudancaEstilo() {
+      if (abaAtual === "avulso") {
+        agendarPreviewAvulso(220);
+      } else if (document.getElementById("planilha_file").files[0] && document.getElementById("codigo_produto").value.trim()) {
+        atualizarPreviewPlanilha();
+      }
+    }
 
     document.querySelectorAll(".aba").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -188,7 +285,7 @@
         abaAtual = btn.dataset.aba;
         document.getElementById("sec-" + abaAtual).classList.add("ativa");
         if (abaAtual === "avulso") {
-          agendarPreviewAvulso(100);
+          agendarPreviewAvulso(180);
         }
       });
     });
@@ -225,9 +322,13 @@
 
     function montarFormDataBase() {
       const fd = new FormData();
+      const forma = document.getElementById("forma_valor").value;
+      const corHex = (document.getElementById("cor_forma_hex").value || "#FFD700").trim();
       fd.append("formato", document.getElementById("formato").value);
       fd.append("fundo_preset", document.getElementById("fundo_preset").value);
-      fd.append("fundo_paralelogramo", document.getElementById("fundo_paralelogramo").checked ? "true" : "false");
+      fd.append("forma_valor", forma);
+      fd.append("cor_forma_valor", corHex);
+      fd.append("fundo_paralelogramo", forma === "paralelogramo" ? "true" : "false");
       const fFile = document.getElementById("fundo_file").files[0];
       if (fFile) fd.append("fundo", fFile);
       return fd;
@@ -259,7 +360,7 @@
       definirStatusPreview("Erro na prévia");
     }
 
-    function agendarPreviewAvulso(delayMs = 350) {
+    function agendarPreviewAvulso(delayMs = 450) {
       if (abaAtual !== "avulso") return;
       clearTimeout(timerPreviewAvulso);
       definirStatusPreview("Digitando...");
@@ -269,8 +370,15 @@
     }
 
     async function atualizarPreviewAvulso() {
+      if (emExecucaoPreview) {
+        pendenciaPreview = true;
+        return;
+      }
+      emExecucaoPreview = true;
+      pendenciaPreview = false;
+
       if (controllerPreviewAvulso) {
-        controllerPreviewAvulso.abort();
+        try { controllerPreviewAvulso.abort(); } catch (e) {}
       }
       controllerPreviewAvulso = new AbortController();
       definirStatusPreview("Atualizando prévia...");
@@ -285,11 +393,20 @@
           signal: controllerPreviewAvulso.signal,
         });
         if (!res) return;
-        if (!res.ok) return mostrarErroPreview(await res.text());
+        if (!res.ok) {
+          mostrarErroPreview(await res.text());
+          return;
+        }
         mostrarImagemPreview(await res.blob());
       } catch (err) {
-        if (err.name === "AbortError") return;
+        if (err && err.name === "AbortError") return;
         mostrarErroPreview("Erro ao atualizar prévia em tempo real.");
+      } finally {
+        emExecucaoPreview = false;
+        if (pendenciaPreview) {
+          pendenciaPreview = false;
+          agendarPreviewAvulso(150);
+        }
       }
     }
 
@@ -345,6 +462,26 @@
       a.click();
     }
 
+    const pickerCor = document.getElementById("cor_forma_picker");
+    const inputHexCor = document.getElementById("cor_forma_hex");
+
+    pickerCor.addEventListener("change", () => {
+      const val = pickerCor.value.toUpperCase();
+      inputHexCor.value = val;
+      marcarSwatchAtiva(val);
+      notificarMudancaEstilo();
+    });
+
+    inputHexCor.addEventListener("input", () => {
+      const raw = inputHexCor.value.trim();
+      const comHash = raw.startsWith("#") ? raw : "#" + raw;
+      if (/^#[0-9a-fA-F]{6}$/.test(comHash)) {
+        pickerCor.value = comHash;
+        marcarSwatchAtiva(comHash);
+        notificarMudancaEstilo();
+      }
+    });
+
     [
       "descricao_produtos",
       "preco_normal",
@@ -358,25 +495,20 @@
     ].forEach((id) => {
       const el = document.getElementById(id);
       if (el) {
-        el.addEventListener("input", () => agendarPreviewAvulso(350));
-        el.addEventListener("change", () => agendarPreviewAvulso(150));
+        el.addEventListener("input", () => agendarPreviewAvulso(450));
+        el.addEventListener("change", () => agendarPreviewAvulso(200));
       }
     });
 
-    ["formato", "fundo_preset", "fundo_file", "fundo_paralelogramo"].forEach((id) => {
+    ["formato", "fundo_preset", "fundo_file", "forma_valor"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) {
-        el.addEventListener("change", () => {
-          if (abaAtual === "avulso") {
-            agendarPreviewAvulso(150);
-          } else if (document.getElementById("planilha_file").files[0] && document.getElementById("codigo_produto").value.trim()) {
-            atualizarPreviewPlanilha();
-          }
-        });
+        el.addEventListener("change", notificarMudancaEstilo);
       }
     });
 
-    carregarFundos().then(() => {
+    montarPlanilhaCores();
+    carregarFundos().finally(() => {
       atualizarPreviewAvulso();
     });
   </script>
