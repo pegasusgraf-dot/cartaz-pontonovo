@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gerador de Cartaz SyncSorte</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
     body { margin: 0; background: #0f172a; color: #f8fafc; padding-bottom: 48px; }
@@ -298,6 +299,7 @@
           <button type="button" class="btn-azul" onclick="atualizarPreviewPlanilha()">Prévia por Código</button>
           <button type="button" class="btn-amarelo" onclick="baixarUnicoPlanilha()">PDF do Código</button>
           <button type="button" class="btn-imprimir" onclick="imprimirUnicoPlanilha()">Imprimir Código</button>
+          <button type="button" class="btn-imprimir" onclick="imprimirTodosPlanilha()">Imprimir Todos</button>
           <button type="button" class="btn-verde" onclick="baixarLoteZip()">Baixar Lote (.ZIP)</button>
         </div>
       </div>
@@ -664,7 +666,8 @@
     }
 
     function imprimirBlobPdf(blob) {
-      const pdfUrl = URL.createObjectURL(blob);
+      const pdfBlob = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+      const pdfUrl = URL.createObjectURL(pdfBlob);
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
       iframe.style.right = "0";
@@ -763,6 +766,45 @@
       const blob = await res.blob();
       definirStatusPreview("Pronto para imprimir");
       imprimirBlobPdf(blob);
+    }
+
+    async function imprimirTodosPlanilha() {
+      const pFile = document.getElementById("planilha_file").files[0];
+      if (!pFile) {
+        return alert("Selecione a planilha (.xlsx) primeiro.");
+      }
+
+      definirStatusPreview("Gerando e preparando todos os cartazes...");
+      const res = await fetchAutenticado("/gerar", { method: "POST", body: montarFormDataPlanilha() });
+      if (!res) return;
+      if (!res.ok) {
+        definirStatusPreview("Erro na impressão");
+        return alert(await res.text());
+      }
+
+      const zipBlob = await res.blob();
+
+      if (typeof JSZip !== "undefined") {
+        try {
+          const zip = await JSZip.loadAsync(zipBlob);
+          const pdfEntry =
+            zip.file("todos_os_cartazes.pdf") ||
+            Object.values(zip.files).find((f) => !f.dir && f.name.toLowerCase().endsWith(".pdf"));
+
+          if (pdfEntry) {
+            const pdfBytes = await pdfEntry.async("blob");
+            definirStatusPreview("Pronto para imprimir lote");
+            imprimirBlobPdf(new Blob([pdfBytes], { type: "application/pdf" }));
+            return;
+          }
+        } catch (e) {}
+      }
+
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = "cartazes.zip";
+      a.click();
+      definirStatusPreview("ZIP baixado");
     }
 
     async function baixarLoteZip() {
