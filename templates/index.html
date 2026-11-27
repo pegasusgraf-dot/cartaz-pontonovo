@@ -17,7 +17,6 @@
     header .acoes { display: flex; gap: 12px; align-items: center; font-size: 0.9rem; }
     header a { color: #facc15; text-decoration: none; font-weight: 600; }
 
-    /* align-items: start permite que .painel-preview fique fixo durante a rolagem */
     .container {
       max-width: 1120px; margin: 24px auto; padding: 0 16px;
       display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
@@ -45,6 +44,12 @@
     input[type="text"], select, input[type="file"] {
       width: 100%; padding: 9px 10px; border-radius: 8px;
       border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 0.9rem;
+    }
+    .dica-campo {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: #94a3b8;
     }
 
     /* Grade visual com miniaturas compactas no formato real de cada imagem */
@@ -139,6 +144,9 @@
       background: #0f172a; border: 1px dashed #475569; border-radius: 10px; padding: 12px;
       cursor: pointer;
     }
+    body.modo-planilha .preview-box {
+      cursor: default;
+    }
     .preview-box img { max-width: 100%; max-height: 620px; border-radius: 6px; }
     .dica-clique-preview {
       position: absolute;
@@ -204,11 +212,10 @@
       </div>
 
       <div class="campo">
-        <label for="fundo_preset">Fundo Pronto (pasta fundos_prontos)</label>
+        <label for="fundo_preset">Fundo Pronto (fixo durante a edição da planilha)</label>
         <select id="fundo_preset">
           <option value="">-- Nenhum / Usar Upload --</option>
         </select>
-        <!-- Grade com as imagens carregadas no formato original em tamanho reduzido -->
         <div id="grade-fundos-prontos" class="grade-fundos" aria-label="Miniaturas dos fundos prontos"></div>
       </div>
 
@@ -292,14 +299,15 @@
           <input id="planilha_file" type="file" accept=".xlsx,.xls" />
         </div>
         <div class="campo">
-          <label for="codigo_produto">Código do Produto (para prévia ou único)</label>
-          <input id="codigo_produto" type="text" placeholder="Ex: 101" />
+          <label for="codigo_produto">Código(s) Editado(s) / Selecionado(s)</label>
+          <input id="codigo_produto" type="text" placeholder="Ex: 101 ou 101, 102, 103" />
+          <span class="dica-campo">Se informar código(s), apenas a parte editada/selecionada será gerada ou impressa com o fundo fixo.</span>
         </div>
         <div class="botoes">
           <button type="button" class="btn-azul" onclick="atualizarPreviewPlanilha()">Prévia por Código</button>
           <button type="button" class="btn-amarelo" onclick="baixarUnicoPlanilha()">PDF do Código</button>
           <button type="button" class="btn-imprimir" onclick="imprimirUnicoPlanilha()">Imprimir Código</button>
-          <button type="button" class="btn-imprimir" onclick="imprimirTodosPlanilha()">Imprimir Todos</button>
+          <button type="button" class="btn-imprimir" onclick="imprimirTodosPlanilha()">Imprimir Editados / Todos</button>
           <button type="button" class="btn-verde" onclick="baixarLoteZip()">Baixar Lote (.ZIP)</button>
         </div>
       </div>
@@ -512,10 +520,19 @@
       marcarFundoAtivo(document.getElementById("fundo_preset")?.value || "");
     }
 
+    function obterCodigosSelecionados() {
+      const bruto = (document.getElementById("codigo_produto")?.value || "").trim();
+      if (!bruto) return [];
+      return bruto
+        .split(/[\s,;]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
     function notificarMudancaEstilo() {
       if (abaAtual === "avulso") {
         agendarPreviewAvulso(220);
-      } else if (document.getElementById("planilha_file").files[0] && document.getElementById("codigo_produto").value.trim()) {
+      } else if (document.getElementById("planilha_file").files[0] && obterCodigosSelecionados().length > 0) {
         atualizarPreviewPlanilha();
       }
     }
@@ -527,9 +544,12 @@
         btn.classList.add("ativa");
         abaAtual = btn.dataset.aba;
         document.body.classList.toggle("modo-avulso", abaAtual === "avulso");
+        document.body.classList.toggle("modo-planilha", abaAtual === "planilha");
         document.getElementById("sec-" + abaAtual).classList.add("ativa");
         if (abaAtual === "avulso") {
           agendarPreviewAvulso(180);
+        } else {
+          definirStatusPreview("Fundo fixo na aba Planilha");
         }
       });
     });
@@ -623,9 +643,12 @@
         URL.revokeObjectURL(ultimaUrlPreview);
       }
       ultimaUrlPreview = URL.createObjectURL(blob);
+      const dica = abaAtual === "avulso"
+        ? `<span class="dica-clique-preview">Clique para trocar o fundo</span>`
+        : `<span class="dica-clique-preview">Fundo fixo</span>`;
       document.getElementById("preview-box").innerHTML = `
         <img src="${ultimaUrlPreview}" alt="Prévia do cartaz" />
-        <span class="dica-clique-preview">Clique para trocar o fundo</span>
+        ${dica}
       `;
       definirStatusPreview("Atualizado");
     }
@@ -748,44 +771,109 @@
       imprimirBlobPdf(blob);
     }
 
-    function montarFormDataPlanilha() {
+    function montarFormDataPlanilha(codigosOverride = null) {
       const fd = montarFormDataBase();
       const pFile = document.getElementById("planilha_file").files[0];
       if (pFile) fd.append("planilha", pFile);
-      fd.append("codigo_produto", document.getElementById("codigo_produto").value);
+
+      const codigos = Array.isArray(codigosOverride) ? codigosOverride : obterCodigosSelecionados();
+      const primeiroCodigo = codigos[0] || "";
+      fd.append("codigo_produto", primeiroCodigo);
+      fd.append("codigos_produto", codigos.join(","));
+      fd.append("apenas_editados", codigos.length > 0 ? "true" : "false");
       return fd;
     }
 
+    async function gerarPdfParaCodigos(codigos) {
+      const blobs = [];
+      for (const codigo of codigos) {
+        const fd = montarFormDataPlanilha([codigo]);
+        const res = await fetchAutenticado("/gerar_unico", { method: "POST", body: fd });
+        if (!res) return null;
+        if (!res.ok) {
+          throw new Error(`Código ${codigo}: ${await res.text()}`);
+        }
+        blobs.push(await res.blob());
+      }
+      return blobs;
+    }
+
     async function atualizarPreviewPlanilha() {
-      definirStatusPreview("Gerando prévia...");
-      const res = await fetchAutenticado("/preview", { method: "POST", body: montarFormDataPlanilha() });
+      const pFile = document.getElementById("planilha_file").files[0];
+      if (!pFile) {
+        return alert("Selecione a planilha (.xlsx) primeiro.");
+      }
+      const codigos = obterCodigosSelecionados();
+      if (!codigos.length) {
+        return alert("Informe o código do produto editado/selecionado para gerar a prévia.");
+      }
+
+      definirStatusPreview(`Gerando prévia do código ${codigos[0]}...`);
+      const res = await fetchAutenticado("/preview", {
+        method: "POST",
+        body: montarFormDataPlanilha([codigos[0]]),
+      });
       if (!res) return;
       if (!res.ok) return mostrarErroPreview(await res.text());
       mostrarImagemPreview(await res.blob());
     }
 
     async function baixarUnicoPlanilha() {
-      const res = await fetchAutenticado("/gerar_unico", { method: "POST", body: montarFormDataPlanilha() });
-      if (!res) return;
-      if (!res.ok) return alert(await res.text());
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "cartaz_produto.pdf";
-      a.click();
+      const pFile = document.getElementById("planilha_file").files[0];
+      if (!pFile) {
+        return alert("Selecione a planilha (.xlsx) primeiro.");
+      }
+      const codigos = obterCodigosSelecionados();
+      if (!codigos.length) {
+        return alert("Informe o código do produto editado/selecionado.");
+      }
+
+      try {
+        definirStatusPreview("Gerando PDF do(s) código(s)...");
+        const blobs = await gerarPdfParaCodigos(codigos);
+        if (!blobs || !blobs.length) return;
+
+        if (blobs.length === 1) {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blobs[0]);
+          a.download = `cartaz_${codigos[0]}.pdf`;
+          a.click();
+        } else if (typeof JSZip !== "undefined") {
+          const zip = new JSZip();
+          blobs.forEach((b, i) => zip.file(`cartaz_${codigos[i]}.pdf`, b));
+          const zipBlob = await zip.generateAsync({ type: "blob" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(zipBlob);
+          a.download = "cartazes_editados.zip";
+          a.click();
+        }
+        definirStatusPreview("PDF pronto");
+      } catch (err) {
+        definirStatusPreview("Erro ao gerar PDF");
+        alert(err.message || "Erro ao gerar PDF.");
+      }
     }
 
     async function imprimirUnicoPlanilha() {
-      definirStatusPreview("Preparando impressão...");
-      const res = await fetchAutenticado("/gerar_unico", { method: "POST", body: montarFormDataPlanilha() });
-      if (!res) return;
-      if (!res.ok) {
-        definirStatusPreview("Erro na impressão");
-        return alert(await res.text());
+      const pFile = document.getElementById("planilha_file").files[0];
+      if (!pFile) {
+        return alert("Selecione a planilha (.xlsx) primeiro.");
       }
-      const blob = await res.blob();
-      definirStatusPreview("Pronto para imprimir");
-      imprimirBlobPdf(blob);
+      const codigos = obterCodigosSelecionados();
+      if (!codigos.length) {
+        return alert("Informe o código do produto editado/selecionado.");
+      }
+
+      try {
+        definirStatusPreview("Preparando impressão...");
+        const blobs = await gerarPdfParaCodigos(codigos);
+        if (!blobs || !blobs.length) return;
+        definirStatusPreview("Pronto para imprimir");
+        blobs.forEach((b) => imprimirBlobPdf(b));
+      } catch (err) {
+        definirStatusPreview("Erro na impressão");
+        alert(err.message || "Erro ao preparar impressão.");
+      }
     }
 
     async function imprimirTodosPlanilha() {
@@ -794,8 +882,16 @@
         return alert("Selecione a planilha (.xlsx) primeiro.");
       }
 
+      const codigosEditados = obterCodigosSelecionados();
+      if (codigosEditados.length > 0) {
+        return imprimirUnicoPlanilha();
+      }
+
+      const confirmar = confirm("Nenhum código foi informado. Deseja realmente gerar e imprimir TODOS os itens da planilha?");
+      if (!confirmar) return;
+
       definirStatusPreview("Gerando e preparando todos os cartazes...");
-      const res = await fetchAutenticado("/gerar", { method: "POST", body: montarFormDataPlanilha() });
+      const res = await fetchAutenticado("/gerar", { method: "POST", body: montarFormDataPlanilha([]) });
       if (!res) return;
       if (!res.ok) {
         definirStatusPreview("Erro na impressão");
@@ -828,7 +924,17 @@
     }
 
     async function baixarLoteZip() {
-      const res = await fetchAutenticado("/gerar", { method: "POST", body: montarFormDataPlanilha() });
+      const pFile = document.getElementById("planilha_file").files[0];
+      if (!pFile) {
+        return alert("Selecione a planilha (.xlsx) primeiro.");
+      }
+
+      const codigosEditados = obterCodigosSelecionados();
+      if (codigosEditados.length > 0) {
+        return baixarUnicoPlanilha();
+      }
+
+      const res = await fetchAutenticado("/gerar", { method: "POST", body: montarFormDataPlanilha([]) });
       if (!res) return;
       if (!res.ok) return alert(await res.text());
       const blob = await res.blob();
@@ -839,6 +945,7 @@
     }
 
     document.getElementById("preview-box").addEventListener("click", () => {
+      if (abaAtual !== "avulso") return;
       const nomes = listaFundosDisponiveis
         .map((f) => (typeof f === "string" ? f : f.nome))
         .filter(Boolean);
@@ -859,6 +966,13 @@
         marcarFundoAtivo("");
       }
       notificarMudancaEstilo();
+    });
+
+    document.getElementById("codigo_produto").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        atualizarPreviewPlanilha();
+      }
     });
 
     const pickerCor = document.getElementById("cor_forma_picker");
