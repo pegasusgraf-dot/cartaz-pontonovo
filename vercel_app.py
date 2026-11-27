@@ -108,4 +108,4 @@ def login():
 @app.route("/logout", methods=["POST"], endpoint="cartaz_logout")
 def logout():
     session.clear()
-    return redirect(url_for("cartaz_login"))
+    return redirect(url_for("cartaz_login")) 
