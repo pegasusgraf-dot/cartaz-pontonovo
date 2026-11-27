@@ -1758,4 +1758,59 @@ def gerar_avulso():
             "campo_extra": (form.get("campo_extra") or "").strip(),
             "observacao_extra": (form.get("observacao_extra") or "").strip(),
             "importa": (form.get("importa") or form.get("importado") or form.get("origem") or "").strip(),
-            "preco_normal": (form.get("preco_normal") or
+            "preco_normal": (form.get("preco_normal") or form.get("preco_de") or "").strip(),
+            "preco_oferta": preco_oferta,
+            "unidade_medida": (
+                form.get("unidade_medida")
+                or form.get("unidade")
+                or form.get("un")
+                or ""
+            ).strip(),
+            "limite_por_cliente": (form.get("limite_por_cliente") or "").strip(),
+            "validade": validade_val,
+            "data_inicio": data_inicio_val,
+            "data_termino": data_termino_val,
+            "observacao": obs_val,
+        }
+
+        caminho_fundo = resolver_imagem_fundo(request, fallback_ultimo_upload=False)
+
+        if caminho_fundo and os.path.exists(caminho_fundo):
+            try:
+                with Image.open(caminho_fundo) as im_check:
+                    im_check.verify()
+                img_reader = ImageReader(caminho_fundo)
+            except Exception:
+                img_reader = None
+        else:
+            img_reader = None
+
+        nome_limpo = "".join(c for c in nome_prod if c.isalnum() or c in (" ", "_", "-")).strip()[:30] or "cartaz"
+        caminho_pdf = os.path.join(PASTA_TEMP, f"avulso_{nome_limpo}.pdf")
+
+        c = canvas.Canvas(caminho_pdf, pagesize=(largura_fmt, altura_fmt))
+        criar_cartaz_pdf(
+            c,
+            dados,
+            img_reader,
+            largura_fmt,
+            altura_fmt,
+            x_offset=0,
+            y_offset=0,
+            fator_escala=1.0,
+            formato=formato_limpo,
+            forma_valor=forma_val,
+            cor_forma_valor=cor_forma,
+            modo_caixa_unidade=modo_caixa_unidade,
+        )
+        c.showPage()
+        c.save()
+
+        return send_file(caminho_pdf, as_attachment=True, download_name=f"cartaz_{nome_limpo}.pdf")
+
+    except Exception as e:
+        return f"Erro interno no servidor: {str(e)}", 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", debug=True, port=2000, threaded=True, use_reloader=False)
