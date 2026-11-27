@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gerador de Cartazes</title>
+  <style>
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body { margin: 0; background: #0f172a; color: #f8fafc; }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 24px; background: #1e293b; border-bottom: 1px solid #334155;
+    }
+    header .titulo { font-weight: 700; font-size: 1.05rem; }
+    header .acoes { display: flex; gap: 12px; align-items: center; font-size: 0.9rem; }
+    header a { color: #facc15; text-decoration: none; font-weight: 600; }
+    .container {
+      max-width: 1120px; margin: 24px auto; padding: 0 16px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    }
+    @media (max-width: 860px) { .container { grid-template-columns: 1fr; } }
+    .painel {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px;
+    }
+    h2 { margin: 0 0 14px; font-size: 1.1rem; }
+    .campo { margin-bottom: 12px; }
+    label { display: block; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 4px; }
+    input[type="text"], select, input[type="file"] {
+      width: 100%; padding: 9px 10px; border-radius: 8px;
+      border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 0.9rem;
+    }
+    .linha-check { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 0.9rem; }
+    .botoes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    button {
+      padding: 10px 14px; border-radius: 8px; border: 0; font-weight: 700;
+      cursor: pointer; font-size: 0.88rem;
+    }
+    .btn-amarelo { background: #eab308; color: #0f172a; }
+    .btn-azul { background: #3b82f6; color: #fff; }
+    .btn-verde { background: #22c55e; color: #052e16; }
+    .preview-topo {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+    }
+    .preview-topo h2 { margin: 0; }
+    .status-preview { font-size: 0.8rem; color: #94a3b8; }
+    .preview-box {
+      min-height: 440px; display: grid; place-items: center;
+      background: #0f172a; border: 1px dashed #475569; border-radius: 10px; padding: 12px;
+    }
+    .preview-box img { max-width: 100%; max-height: 620px; border-radius: 6px; }
+    .msg-erro { color: #fca5a5; font-size: 0.9rem; text-align: center; }
+    .abas { display: flex; gap: 8px; margin-bottom: 16px; }
+    .aba { padding: 8px 12px; border-radius: 8px; background: #0f172a; color: #94a3b8; border: 1px solid #334155; }
+    .aba.ativa { background: #eab308; color: #0f172a; border-color: #eab308; }
+    .secao { display: none; }
+    .secao.ativa { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="titulo">Gerador de Cartazes</div>
+    <div class="acoes">
+      <span>{{ usuario }}</span>
+      <a href="/logout">Sair</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="painel">
+      <div class="abas">
+        <button type="button" class="aba ativa" data-aba="avulso">Cartaz Avulso</button>
+        <button type="button" class="aba" data-aba="planilha">Planilha (.xlsx)</button>
+      </div>
+
+      <div class="campo">
+        <label for="formato">Formato do Cartaz</label>
+        <select id="formato">
+          <option value="vertical">Vertical (Retrato)</option>
+          <option value="vertical_dobra">Vertical com Dobra (4 cm)</option>
+          <option value="horizontal">Horizontal (Paisagem)</option>
+          <option value="horizontal_dobra">Horizontal com Dobra (4 cm)</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="fundo_preset">Fundo Pronto (pasta fundos_prontos)</label>
+        <select id="fundo_preset">
+          <option value="">-- Nenhum / Usar Upload --</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="fundo_file">Ou Enviar Imagem de Fundo</label>
+        <input id="fundo_file" type="file" accept=".jpg,.jpeg,.png,.webp" />
+      </div>
+
+      <div class="linha-check">
+        <input id="fundo_paralelogramo" type="checkbox" />
+        <label for="fundo_paralelogramo" style="margin:0;">Fundo paralelogramo amarelo no preço</label>
+      </div>
+
+      <!-- ABA AVULSO -->
+      <div id="sec-avulso" class="secao ativa">
+        <h2>Dados do Cartaz Avulso</h2>
+        <div class="campo">
+          <label for="descricao_produtos">Nome do Produto</label>
+          <input id="descricao_produtos" type="text" placeholder="Ex: Arroz Agulhinha Tipo 1 5kg" />
+        </div>
+        <div class="campo">
+          <label for="preco_normal">Preço "De" (opcional)</label>
+          <input id="preco_normal" type="text" placeholder="Ex: 29,90" />
+        </div>
+        <div class="campo">
+          <label for="preco_oferta">Preço "Por"</label>
+          <input id="preco_oferta" type="text" placeholder="Ex: 24,90" />
+        </div>
+        <div class="campo">
+          <label for="unidade_medida">Unidade de Medida (<code>unidade_medida</code>, opcional)</label>
+          <input id="unidade_medida" name="unidade_medida" type="text" placeholder="Ex: KG, UN, PCT" />
+        </div>
+        <div class="campo">
+          <label for="campo_extra">Leve X Por: (opcional)</label>
+          <input id="campo_extra" type="text" placeholder="Ex: 3 UNIDADES" />
+        </div>
+        <div class="campo">
+          <label for="observacao_extra">Observação Extra (abaixo de Leve Por, opcional)</label>
+          <input id="observacao_extra" type="text" placeholder="Ex: cada unidade sai por R$ 8,30" />
+        </div>
+        <div class="campo">
+          <label for="limite_por_cliente">Limite por Cliente (opcional)</label>
+          <input id="limite_por_cliente" type="text" placeholder="Ex: 6 UN" />
+        </div>
+        <div class="campo">
+          <label for="validade">Validade (DD/MM/AAAA ou INICIO:FIM)</label>
+          <input id="validade" type="text" placeholder="Ex: 25/11/2026:30/11/2026" />
+        </div>
+        <div class="campo">
+          <label for="observacao">Observação / Rodapé</label>
+          <input id="observacao" type="text" value="ou até enquanto durar o estoque" />
+        </div>
+        <div class="botoes">
+          <button type="button" class="btn-azul" onclick="atualizarPreviewAvulso()">Pré-visualizar</button>
+          <button type="button" class="btn-verde" onclick="baixarAvulso()">Baixar PDF</button>
+        </div>
+      </div>
+
+      <!-- ABA PLANILHA -->
+      <div id="sec-planilha" class="secao">
+        <h2>Gerar a partir de Planilha (.xlsx)</h2>
+        <div class="campo">
+          <label for="planilha_file">Arquivo Excel (.xlsx)</label>
+          <input id="planilha_file" type="file" accept=".xlsx,.xls" />
+        </div>
+        <div class="campo">
+          <label for="codigo_produto">Código do Produto (para prévia ou único)</label>
+          <input id="codigo_produto" type="text" placeholder="Ex: 101" />
+        </div>
+        <div class="botoes">
+          <button type="button" class="btn-azul" onclick="atualizarPreviewPlanilha()">Prévia por Código</button>
+          <button type="button" class="btn-amarelo" onclick="baixarUnicoPlanilha()">PDF do Código</button>
+          <button type="button" class="btn-verde" onclick="baixarLoteZip()">Baixar Lote (.ZIP)</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="painel">
+      <div class="preview-topo">
+        <h2>Pré-visualização</h2>
+        <span id="status-preview" class="status-preview">Atualiza automaticamente</span>
+      </div>
+      <div id="preview-box" class="preview-box">
+        <span style="color:#94a3b8;">Digite os dados ao lado para visualizar o cartaz.</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let abaAtual = "avulso";
+    let timerPreviewAvulso = null;
+    let controllerPreviewAvulso = null;
+    let ultimaUrlPreview = null;
+
+    document.querySelectorAll(".aba").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".aba").forEach((b) => b.classList.remove("ativa"));
+        document.querySelectorAll(".secao").forEach((s) => s.classList.remove("ativa"));
+        btn.classList.add("ativa");
+        abaAtual = btn.dataset.aba;
+        document.getElementById("sec-" + abaAtual).classList.add("ativa");
+        if (abaAtual === "avulso") {
+          agendarPreviewAvulso(100);
+        }
+      });
+    });
+
+    function definirStatusPreview(texto) {
+      const el = document.getElementById("status-preview");
+      if (el) el.textContent = texto;
+    }
+
+    async function fetchAutenticado(url, opcoes = {}) {
+      const headers = Object.assign({ "X-Requested-With": "XMLHttpRequest" }, opcoes.headers || {});
+      const res = await fetch(url, Object.assign({}, opcoes, { headers, credentials: "same-origin" }));
+      if (res.status === 401 || (res.redirected && res.url.includes("/login"))) {
+        window.location.href = "/login";
+        return null;
+      }
+      return res;
+    }
+
+    async function carregarFundos() {
+      try {
+        const res = await fetchAutenticado("/api/fundos");
+        if (!res || !res.ok) return;
+        const data = await res.json();
+        const sel = document.getElementById("fundo_preset");
+        (data.fundos || []).forEach((f) => {
+          const opt = document.createElement("option");
+          opt.value = f.nome;
+          opt.textContent = f.nome;
+          sel.appendChild(opt);
+        });
+      } catch (e) {}
+    }
+
+    function montarFormDataBase() {
+      const fd = new FormData();
+      fd.append("formato", document.getElementById("formato").value);
+      fd.append("fundo_preset", document.getElementById("fundo_preset").value);
+      fd.append("fundo_paralelogramo", document.getElementById("fundo_paralelogramo").checked ? "true" : "false");
+      const fFile = document.getElementById("fundo_file").files[0];
+      if (fFile) fd.append("fundo", fFile);
+      return fd;
+    }
+
+    function preencherCamposAvulsoFormData(fd) {
+      fd.append("descricao_produtos", document.getElementById("descricao_produtos").value);
+      fd.append("preco_normal", document.getElementById("preco_normal").value);
+      fd.append("preco_oferta", document.getElementById("preco_oferta").value || "0");
+      fd.append("unidade_medida", document.getElementById("unidade_medida").value);
+      fd.append("campo_extra", document.getElementById("campo_extra").value);
+      fd.append("observacao_extra", document.getElementById("observacao_extra").value);
+      fd.append("limite_por_cliente", document.getElementById("limite_por_cliente").value);
+      fd.append("validade", document.getElementById("validade").value);
+      fd.append("observacao", document.getElementById("observacao").value);
+    }
+
+    function mostrarImagemPreview(blob) {
+      if (ultimaUrlPreview) {
+        URL.revokeObjectURL(ultimaUrlPreview);
+      }
+      ultimaUrlPreview = URL.createObjectURL(blob);
+      document.getElementById("preview-box").innerHTML = `<img src="${ultimaUrlPreview}" alt="Prévia do cartaz" />`;
+      definirStatusPreview("Atualizado");
+    }
+
+    function mostrarErroPreview(texto) {
+      document.getElementById("preview-box").innerHTML = `<div class="msg-erro">${texto}</div>`;
+      definirStatusPreview("Erro na prévia");
+    }
+
+    function agendarPreviewAvulso(delayMs = 350) {
+      if (abaAtual !== "avulso") return;
+      clearTimeout(timerPreviewAvulso);
+      definirStatusPreview("Digitando...");
+      timerPreviewAvulso = setTimeout(() => {
+        atualizarPreviewAvulso();
+      }, delayMs);
+    }
+
+    async function atualizarPreviewAvulso() {
+      if (controllerPreviewAvulso) {
+        controllerPreviewAvulso.abort();
+      }
+      controllerPreviewAvulso = new AbortController();
+      definirStatusPreview("Atualizando prévia...");
+
+      const fd = montarFormDataBase();
+      preencherCamposAvulsoFormData(fd);
+
+      try {
+        const res = await fetchAutenticado("/preview_avulso", {
+          method: "POST",
+          body: fd,
+          signal: controllerPreviewAvulso.signal,
+        });
+        if (!res) return;
+        if (!res.ok) return mostrarErroPreview(await res.text());
+        mostrarImagemPreview(await res.blob());
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        mostrarErroPreview("Erro ao atualizar prévia em tempo real.");
+      }
+    }
+
+    async function baixarAvulso() {
+      const fd = montarFormDataBase();
+      preencherCamposAvulsoFormData(fd);
+
+      const res = await fetchAutenticado("/gerar_avulso", { method: "POST", body: fd });
+      if (!res) return;
+      if (!res.ok) return alert(await res.text());
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "cartaz_avulso.pdf";
+      a.click();
+    }
+
+    function montarFormDataPlanilha() {
+      const fd = montarFormDataBase();
+      const pFile = document.getElementById("planilha_file").files[0];
+      if (pFile) fd.append("planilha", pFile);
+      fd.append("codigo_produto", document.getElementById("codigo_produto").value);
+      return fd;
+    }
+
+    async function atualizarPreviewPlanilha() {
+      definirStatusPreview("Gerando prévia...");
+      const res = await fetchAutenticado("/preview", { method: "POST", body: montarFormDataPlanilha() });
+      if (!res) return;
+      if (!res.ok) return mostrarErroPreview(await res.text());
+      mostrarImagemPreview(await res.blob());
+    }
+
+    async function baixarUnicoPlanilha() {
+      const res = await fetchAutenticado("/gerar_unico", { method: "POST", body: montarFormDataPlanilha() });
+      if (!res) return;
+      if (!res.ok) return alert(await res.text());
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "cartaz_produto.pdf";
+      a.click();
+    }
+
+    async function baixarLoteZip() {
+      const res = await fetchAutenticado("/gerar", { method: "POST", body: montarFormDataPlanilha() });
+      if (!res) return;
+      if (!res.ok) return alert(await res.text());
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "cartazes.zip";
+      a.click();
+    }
+
+    [
+      "descricao_produtos",
+      "preco_normal",
+      "preco_oferta",
+      "unidade_medida",
+      "campo_extra",
+      "observacao_extra",
+      "limite_por_cliente",
+      "validade",
+      "observacao",
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("input", () => agendarPreviewAvulso(350));
+        el.addEventListener("change", () => agendarPreviewAvulso(150));
+      }
+    });
+
+    ["formato", "fundo_preset", "fundo_file", "fundo_paralelogramo"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("change", () => {
+          if (abaAtual === "avulso") {
+            agendarPreviewAvulso(150);
+          } else if (document.getElementById("planilha_file").files[0] && document.getElementById("codigo_produto").value.trim()) {
+            atualizarPreviewPlanilha();
+          }
+        });
+      }
+    });
+
+    carregarFundos().then(() => {
+      atualizarPreviewAvulso();
+    });
+  </script>
+</body>
+</html>
