@@ -45,43 +45,46 @@
       border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 0.9rem;
     }
 
-    /* Grade visual com miniaturas compactas ("de comprido, mas menor") */
+    /* Grade visual com miniaturas compactas no formato real de cada imagem */
     .grade-fundos {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
       gap: 8px;
       margin-top: 8px;
     }
     .thumb-fundo {
       position: relative;
-      display: flex;
+      display: inline-flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
+      justify-content: center;
+      gap: 3px;
+      width: auto;
+      min-width: 44px;
+      max-width: 104px;
       padding: 4px;
       border-radius: 8px;
       border: 2px solid #334155;
       background: #0f172a;
       color: #cbd5e1;
-      font-size: 0.68rem;
-      line-height: 1.15;
+      font-size: 0.65rem;
+      line-height: 1.1;
       cursor: pointer;
       transition: border-color 0.15s ease, transform 0.15s ease;
     }
     .thumb-fundo img {
-      width: 100%;
+      width: auto;
       height: auto;
-      aspect-ratio: 3 / 4;
-      object-fit: cover;
-      border-radius: 5px;
+      max-width: 92px;
+      max-height: 76px;
+      object-fit: contain;
+      border-radius: 4px;
       display: block;
       background: #1e293b;
     }
-    .thumb-fundo.horizontal-thumb img {
-      aspect-ratio: 4 / 3;
-    }
     .thumb-fundo span {
-      width: 100%;
+      max-width: 92px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -186,7 +189,7 @@
         <select id="fundo_preset">
           <option value="">-- Nenhum / Usar Upload --</option>
         </select>
-        <!-- Grade com as imagens carregadas para clicar e selecionar -->
+        <!-- Grade com as imagens carregadas no formato original em tamanho reduzido -->
         <div id="grade-fundos-prontos" class="grade-fundos" aria-label="Miniaturas dos fundos prontos"></div>
       </div>
 
@@ -399,9 +402,25 @@
       return urls;
     }
 
-    function aplicarImgComFallback(img, candidatos, ehHorizontal) {
+    function aplicarImgComFallback(img, candidatos, btn) {
       let idx = 0;
       if (!candidatos.length) return;
+
+      img.onload = () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0 && btn) {
+          const ratio = img.naturalWidth / img.naturalHeight;
+          btn.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+          if (ratio >= 1) {
+            img.style.width = "88px";
+            img.style.height = "auto";
+            img.style.maxHeight = "72px";
+          } else {
+            img.style.height = "76px";
+            img.style.width = "auto";
+            img.style.maxWidth = "88px";
+          }
+        }
+      };
 
       img.src = candidatos[0];
       img.onerror = () => {
@@ -410,10 +429,11 @@
           img.src = candidatos[idx];
         } else {
           img.onerror = null;
+          img.onload = null;
           img.style.display = "none";
           const placeholder = document.createElement("div");
           placeholder.textContent = "Sem imagem";
-          placeholder.style.cssText = `width:100%;aspect-ratio:${ehHorizontal ? "4/3" : "3/4"};display:grid;place-items:center;font-size:0.65rem;color:#fca5a5;background:#1e293b;border-radius:5px;text-align:center;padding:4px;`;
+          placeholder.style.cssText = "width:64px;height:48px;display:grid;place-items:center;font-size:0.62rem;color:#fca5a5;background:#1e293b;border-radius:4px;text-align:center;padding:3px;";
           img.parentNode.insertBefore(placeholder, img);
         }
       };
@@ -424,23 +444,20 @@
       if (!grade) return;
       grade.innerHTML = "";
 
-      const formatoAtual = document.getElementById("formato")?.value || "vertical";
-      const ehHorizontal = formatoAtual.startsWith("horizontal");
-
       fundos.forEach((f) => {
         const nome = typeof f === "string" ? f : f.nome;
         if (!nome) return;
 
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "thumb-fundo" + (ehHorizontal ? " horizontal-thumb" : "");
+        btn.className = "thumb-fundo";
         btn.dataset.nome = nome;
         btn.title = nome;
 
         const img = document.createElement("img");
         img.alt = nome;
         img.loading = "lazy";
-        aplicarImgComFallback(img, montarCandidatosUrl(f), ehHorizontal);
+        aplicarImgComFallback(img, montarCandidatosUrl(f), btn);
 
         const legenda = document.createElement("span");
         legenda.textContent = nome;
