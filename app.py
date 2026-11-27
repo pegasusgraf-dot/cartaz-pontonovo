@@ -271,6 +271,11 @@ def parse_cor_rgb(valor, padrao=(255, 215, 0)):
     return padrao
 
 
+def cor_forma_eh_preta(cor_rgb):
+    r, g, b = parse_cor_rgb(cor_rgb, padrao=(255, 215, 0))
+    return r <= 20 and g <= 24 and b <= 39
+
+
 def obter_config_formato(formato):
     fmt = str(formato or "vertical").strip().lower()
 
@@ -966,6 +971,7 @@ def criar_cartaz_pdf(
         cor_forma_valor if cor_forma_valor is not None else dados.get("cor_forma_valor", "#FFD700"),
         padrao=(255, 215, 0),
     )
+    cor_unidade_rgb = (255, 255, 255) if cor_forma_eh_preta(cor_forma_rgb) else (0, 0, 0)
 
     c.saveState()
     c.translate(x_offset, y_offset)
@@ -1231,7 +1237,7 @@ def criar_cartaz_pdf(
         geom=geom_preco,
         unidade_medida=unidade_medida,
         fonte_unidade=f_detalhes,
-        cor_unidade=(0, 0, 0),
+        cor_unidade=cor_unidade_rgb,
         modo_caixa_unidade=modo_caixa_unidade,
     )
 
