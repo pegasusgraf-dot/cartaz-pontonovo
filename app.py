@@ -189,6 +189,20 @@ def parse_bool_form(valor, padrao=False):
     return padrao
 
 
+def aplicar_caixa_texto(valor, modo="livre"):
+    texto = "" if valor is None else str(valor).strip()
+    if not texto or texto.lower() == "nan":
+        return ""
+    modo_limpo = str(modo or "livre").strip().lower()
+    if modo_limpo in ("maiuscula", "maiúscula", "upper", "uppercase"):
+        return texto.upper()
+    if modo_limpo in ("minuscula", "minúscula", "lower", "lowercase"):
+        return texto.lower()
+    if modo_limpo in ("capitalizada", "capitalize", "title"):
+        return texto[:1].upper() + texto[1:].lower()
+    return texto
+
+
 def normalizar_forma_valor(valor, legado_paralelogramo=False):
     mapa_aliases = {
         "nenhuma": "nenhuma",
@@ -451,7 +465,7 @@ def interpretar_intervalo_validade(validade_bruta, data_inicio_bruta="", data_te
     }
 
 
-def obter_unidade_medida(dados):
+def obter_unidade_medida(dados, modo_caixa="livre"):
     chaves_possiveis = ["unidade_medida", "unidade de medida", "unidade", "unid", "un", "um"]
     if hasattr(dados, "index"):
         for col in dados.index:
@@ -459,12 +473,12 @@ def obter_unidade_medida(dados):
             if col_limpa in chaves_possiveis:
                 val = dados.get(col, "")
                 if pd.notna(val) and str(val).strip() != "" and str(val).strip().lower() != "nan":
-                    return str(val).strip().upper()
+                    return aplicar_caixa_texto(val, modo_caixa)
     elif isinstance(dados, dict):
         for chave in chaves_possiveis:
             val = dados.get(chave, "")
             if pd.notna(val) and str(val).strip() != "" and str(val).strip().lower() != "nan":
-                return str(val).strip().upper()
+                return aplicar_caixa_texto(val, modo_caixa)
     return ""
 
 
@@ -770,6 +784,7 @@ def calcular_geometria_preco_oferta(
     cor_forma_valor=(255, 215, 0),
     unidade_medida="",
     fonte_unidade="Helvetica",
+    modo_caixa_unidade="livre",
 ):
     if "," in preco_str:
         partes = preco_str.split(",")
@@ -803,7 +818,7 @@ def calcular_geometria_preco_oferta(
     y_topo_total = max(topo_simbolo, topo_centavos, topo_inteiro)
     y_base_total = y - (tamanho_inteiro * 0.06)
 
-    unidade_limpa = str(unidade_medida or "").strip().upper()
+    unidade_limpa = aplicar_caixa_texto(unidade_medida, modo_caixa_unidade)
     tem_unidade = bool(unidade_limpa)
     tamanho_unidade = max(14, int(tamanho_inteiro * 0.19))
     espaco_unidade = max(6.0, tamanho_inteiro * 0.05)
@@ -874,6 +889,7 @@ def desenhar_preco_oferta_fracionado(
     unidade_medida="",
     fonte_unidade="Helvetica",
     cor_unidade=(0, 0, 0),
+    modo_caixa_unidade="livre",
 ):
     if geom is None:
         geom = calcular_geometria_preco_oferta(
@@ -888,6 +904,7 @@ def desenhar_preco_oferta_fracionado(
             cor_forma_valor=cor_forma_valor,
             unidade_medida=unidade_medida,
             fonte_unidade=fonte_unidade,
+            modo_caixa_unidade=modo_caixa_unidade,
         )
 
     if geom["tem_forma_valor"]:
@@ -932,6 +949,7 @@ def criar_cartaz_pdf(
     fundo_paralelogramo=False,
     forma_valor=None,
     cor_forma_valor=(255, 215, 0),
+    modo_caixa_unidade="livre",
 ):
     cfg = obter_config_formato(formato)
     largura = largura_orig * fator_escala
@@ -997,7 +1015,8 @@ def criar_cartaz_pdf(
     tamanho_fonte_limite = int(altura * (0.036 if eh_horizontal else 0.038))
     y_limite = int(altura * (0.026 if eh_horizontal else 0.118))
 
-    nome_prod = str(dados.get("descricao_produtos", "PRODUTO")).upper()
+    bruto_nome = dados.get("descricao_produtos", "PRODUTO")
+    nome_prod = str(bruto_nome if pd.notna(bruto_nome) else "PRODUTO").strip() or "PRODUTO"
     if tem_dobra:
         tam_nome = int(altura * (0.058 if eh_horizontal else 0.055))
         espaco_pos_imagem = int(altura * 0.022)
@@ -1037,7 +1056,7 @@ def criar_cartaz_pdf(
 
     if tem_extra:
         texto_inicio = "LEVE "
-        texto_meio = str(texto_extra).strip().upper()
+        texto_meio = str(texto_extra).strip()
         texto_fim = " POR:"
         c.setFont(f_preco_oferta, tamanho_fonte_extra)
 
@@ -1087,7 +1106,7 @@ def criar_cartaz_pdf(
     limite_cliente = dados.get("limite_por_cliente", "")
     tem_limite = pd.notna(limite_cliente) and str(limite_cliente).strip() != "" and str(limite_cliente).strip().lower() != "nan"
 
-    unidade_medida = obter_unidade_medida(dados)
+    unidade_medida = obter_unidade_medida(dados, modo_caixa=modo_caixa_unidade)
 
     p_normal = dados.get("preco_normal", "")
     p_oferta_bruto = dados.get("preco_oferta", "0")
@@ -1109,6 +1128,7 @@ def criar_cartaz_pdf(
         cor_forma_valor=cor_forma_rgb,
         unidade_medida=unidade_medida,
         fonte_unidade=f_detalhes,
+        modo_caixa_unidade=modo_caixa_unidade,
     )
     largura_referencia_amostra = max(1.0, geom_amostra["largura_total_preco"])
     largura_desejada_preco = largura_bloco_preco * (0.78 if eh_horizontal else 0.84)
@@ -1141,6 +1161,7 @@ def criar_cartaz_pdf(
             cor_forma_valor=cor_forma_rgb,
             unidade_medida=unidade_medida,
             fonte_unidade=f_detalhes,
+            modo_caixa_unidade=modo_caixa_unidade,
         )
         base_referencia_topo = (
             (geom_cand["y_baixo_forma"] + geom_cand["altura_forma"])
@@ -1211,6 +1232,7 @@ def criar_cartaz_pdf(
         unidade_medida=unidade_medida,
         fonte_unidade=f_detalhes,
         cor_unidade=(0, 0, 0),
+        modo_caixa_unidade=modo_caixa_unidade,
     )
 
     if tem_limite:
@@ -1307,6 +1329,15 @@ def _extrair_estilo_forma_request(req):
     return forma_limpa, cor_rgb
 
 
+def _extrair_modo_caixa_unidade_request(req):
+    return (
+        req.form.get("caixa_unidade_medida")
+        or req.form.get("modo_caixa_unidade")
+        or req.form.get("caixa_unidade")
+        or "livre"
+    ).strip().lower()
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if autenticado():
@@ -1370,6 +1401,7 @@ def preview():
         cfg = obter_config_formato(request.form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
         forma_val, cor_forma = _extrair_estilo_forma_request(request)
+        modo_caixa_unidade = _extrair_modo_caixa_unidade_request(request)
 
         if not codigo_buscado or file_planilha.filename == "" or not caminho_fundo:
             return "Dados incompletos (selecione planilha, fundo e código)", 400
@@ -1418,6 +1450,7 @@ def preview():
             formato=formato_limpo,
             forma_valor=forma_val,
             cor_forma_valor=cor_forma,
+            modo_caixa_unidade=modo_caixa_unidade,
         )
         c.showPage()
         c.save()
@@ -1440,11 +1473,12 @@ def preview():
 def preview_avulso():
     try:
         form = request.form
-        nome_prod = form.get("descricao_produtos") or form.get("nome_produto") or "PRODUTO EM OFERTA"
+        nome_prod = form.get("descricao_produtos") or form.get("nome_produto") or "Produto em Oferta"
         preco_oferta = (form.get("preco_oferta") or form.get("preco_por") or "0").strip()
         cfg = obter_config_formato(form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
         forma_val, cor_forma = _extrair_estilo_forma_request(request)
+        modo_caixa_unidade = _extrair_modo_caixa_unidade_request(request)
 
         validade_val = (form.get("validade") or "").strip()
         data_inicio_val = (form.get("data_inicio") or "").strip()
@@ -1503,6 +1537,7 @@ def preview_avulso():
             formato=formato_limpo,
             forma_valor=forma_val,
             cor_forma_valor=cor_forma,
+            modo_caixa_unidade=modo_caixa_unidade,
         )
         c.showPage()
         c.save()
@@ -1532,6 +1567,7 @@ def gerar():
         cfg = obter_config_formato(request.form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
         forma_val, cor_forma = _extrair_estilo_forma_request(request)
+        modo_caixa_unidade = _extrair_modo_caixa_unidade_request(request)
 
         if file_planilha.filename == "" or not caminho_fundo:
             return "Selecione a planilha (.xlsx) e uma imagem de fundo (da pasta ou por upload).", 400
@@ -1581,6 +1617,7 @@ def gerar():
                 formato=formato_limpo,
                 forma_valor=forma_val,
                 cor_forma_valor=cor_forma,
+                modo_caixa_unidade=modo_caixa_unidade,
             )
             c.showPage()
             c.save()
@@ -1626,6 +1663,7 @@ def gerar_unico():
         cfg = obter_config_formato(request.form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
         forma_val, cor_forma = _extrair_estilo_forma_request(request)
+        modo_caixa_unidade = _extrair_modo_caixa_unidade_request(request)
 
         if not codigo_buscado:
             return "Digite o código do produto que deseja buscar.", 400
@@ -1678,6 +1716,7 @@ def gerar_unico():
             formato=formato_limpo,
             forma_valor=forma_val,
             cor_forma_valor=cor_forma,
+            modo_caixa_unidade=modo_caixa_unidade,
         )
         c.showPage()
         c.save()
@@ -1698,6 +1737,7 @@ def gerar_avulso():
         cfg = obter_config_formato(form.get("formato"))
         largura_fmt, altura_fmt, formato_limpo = cfg["largura"], cfg["altura"], cfg["formato"]
         forma_val, cor_forma = _extrair_estilo_forma_request(request)
+        modo_caixa_unidade = _extrair_modo_caixa_unidade_request(request)
 
         if not nome_prod or not preco_oferta:
             return "Preencha o Nome do Produto e o Preço 'Por'.", 400
@@ -1761,6 +1801,7 @@ def gerar_avulso():
             formato=formato_limpo,
             forma_valor=forma_val,
             cor_forma_valor=cor_forma,
+            modo_caixa_unidade=modo_caixa_unidade,
         )
         c.showPage()
         c.save()
