@@ -126,6 +126,7 @@
     .btn-amarelo { background: #eab308; color: #0f172a; }
     .btn-azul { background: #3b82f6; color: #fff; }
     .btn-verde { background: #22c55e; color: #052e16; }
+    .btn-imprimir { background: #e2e8f0; color: #0f172a; }
     .preview-topo {
       display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
     }
@@ -278,6 +279,7 @@
         <div class="botoes">
           <button type="button" class="btn-azul" onclick="atualizarPreviewAvulso()">Pré-visualizar</button>
           <button type="button" class="btn-verde" onclick="baixarAvulso()">Baixar PDF</button>
+          <button type="button" class="btn-imprimir" onclick="imprimirAvulso()">Imprimir</button>
         </div>
       </div>
 
@@ -295,6 +297,7 @@
         <div class="botoes">
           <button type="button" class="btn-azul" onclick="atualizarPreviewPlanilha()">Prévia por Código</button>
           <button type="button" class="btn-amarelo" onclick="baixarUnicoPlanilha()">PDF do Código</button>
+          <button type="button" class="btn-imprimir" onclick="imprimirUnicoPlanilha()">Imprimir Código</button>
           <button type="button" class="btn-verde" onclick="baixarLoteZip()">Baixar Lote (.ZIP)</button>
         </div>
       </div>
@@ -660,6 +663,38 @@
       }
     }
 
+    function imprimirBlobPdf(blob) {
+      const pdfUrl = URL.createObjectURL(blob);
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "0";
+      iframe.src = pdfUrl;
+
+      const limpar = () => {
+        setTimeout(() => {
+          URL.revokeObjectURL(pdfUrl);
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        }, 60000);
+      };
+
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          window.open(pdfUrl, "_blank");
+        } finally {
+          limpar();
+        }
+      };
+
+      document.body.appendChild(iframe);
+    }
+
     async function baixarAvulso() {
       const fd = montarFormDataBase();
       preencherCamposAvulsoFormData(fd);
@@ -672,6 +707,22 @@
       a.href = URL.createObjectURL(blob);
       a.download = "cartaz_avulso.pdf";
       a.click();
+    }
+
+    async function imprimirAvulso() {
+      definirStatusPreview("Preparando impressão...");
+      const fd = montarFormDataBase();
+      preencherCamposAvulsoFormData(fd);
+
+      const res = await fetchAutenticado("/gerar_avulso", { method: "POST", body: fd });
+      if (!res) return;
+      if (!res.ok) {
+        definirStatusPreview("Erro na impressão");
+        return alert(await res.text());
+      }
+      const blob = await res.blob();
+      definirStatusPreview("Pronto para imprimir");
+      imprimirBlobPdf(blob);
     }
 
     function montarFormDataPlanilha() {
@@ -699,6 +750,19 @@
       a.href = URL.createObjectURL(blob);
       a.download = "cartaz_produto.pdf";
       a.click();
+    }
+
+    async function imprimirUnicoPlanilha() {
+      definirStatusPreview("Preparando impressão...");
+      const res = await fetchAutenticado("/gerar_unico", { method: "POST", body: montarFormDataPlanilha() });
+      if (!res) return;
+      if (!res.ok) {
+        definirStatusPreview("Erro na impressão");
+        return alert(await res.text());
+      }
+      const blob = await res.blob();
+      definirStatusPreview("Pronto para imprimir");
+      imprimirBlobPdf(blob);
     }
 
     async function baixarLoteZip() {
