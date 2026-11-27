@@ -322,7 +322,6 @@
 
   <script>
     const FUNDO_PADRAO = "oferta clube de vantagem.png";
-    // Ajuste esta rota caso sua API de fundos sirva imagens em outro caminho (ex: /fundos_prontos/ ou /api/fundos/)
     const ROTA_IMAGEM_FUNDO = "/fundos_prontos/";
     const ROTAS_ALTERNATIVAS_FUNDO = [
       "/fundos_prontos/",
@@ -349,6 +348,22 @@
       { nome: "Preto", hex: "#111827" },
       { nome: "Cinza", hex: "#64748B" },
     ];
+
+    function corFormaEhPreta(hex) {
+      const limpa = String(hex || "").trim().replace(/^#/, "").toUpperCase();
+      if (limpa.length === 3) {
+        return limpa.split("").map((c) => c + c).join("") === "000000";
+      }
+      if (limpa.length >= 6) {
+        const rgb = limpa.slice(0, 6);
+        if (rgb === "000000" || rgb === "111827") return true;
+        const r = parseInt(rgb.slice(0, 2), 16);
+        const g = parseInt(rgb.slice(2, 4), 16);
+        const b = parseInt(rgb.slice(4, 6), 16);
+        return r <= 20 && g <= 20 && b <= 20;
+      }
+      return false;
+    }
 
     function montarPlanilhaCores() {
       const container = document.getElementById("planilha-cores");
@@ -555,7 +570,6 @@
         }
       } catch (e) {}
 
-      // Garante que o fundo padrão apareça mesmo que /api/fundos demore ou não liste o arquivo ainda
       if (!nomes.includes(FUNDO_PADRAO)) {
         const optPadrao = document.createElement("option");
         optPadrao.value = FUNDO_PADRAO;
@@ -567,7 +581,6 @@
 
       renderizarGradeFundos(listaFundosDisponiveis);
 
-      // Seleciona "oferta clube de vantagem.png" na abertura da página
       const fundoInicial = nomes.includes(FUNDO_PADRAO) ? FUNDO_PADRAO : (nomes[0] || "");
       selecionarFundoPronto(fundoInicial, false);
     }
@@ -576,11 +589,18 @@
       const fd = new FormData();
       const forma = document.getElementById("forma_valor").value;
       const corHex = (document.getElementById("cor_forma_hex").value || "#FFD700").trim();
+      const formaPreta = corFormaEhPreta(corHex);
+
       fd.append("formato", document.getElementById("formato").value);
       fd.append("fundo_preset", document.getElementById("fundo_preset").value);
       fd.append("forma_valor", forma);
       fd.append("cor_forma_valor", corHex);
       fd.append("fundo_paralelogramo", forma === "paralelogramo" ? "true" : "false");
+      fd.append("forma_preta", formaPreta ? "true" : "false");
+      if (formaPreta) {
+        fd.append("cor_unidade_medida", "#FFFFFF");
+      }
+
       const fFile = document.getElementById("fundo_file").files[0];
       if (fFile) fd.append("fundo", fFile);
       return fd;
@@ -818,7 +838,6 @@
       a.click();
     }
 
-    // Clique na prévia alterna para o próximo fundo pronto disponível
     document.getElementById("preview-box").addEventListener("click", () => {
       const nomes = listaFundosDisponiveis
         .map((f) => (typeof f === "string" ? f : f.nome))
